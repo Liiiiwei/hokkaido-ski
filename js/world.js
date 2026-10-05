@@ -451,6 +451,7 @@ export function buildWorld(data, { lowPower = false } = {}) {
     ribbon,
     mapLayer,
     liftGroup,
+    segs: data.segs,
     center,
     radius,
     viewDir,

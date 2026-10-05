@@ -68,9 +68,10 @@ $("resorts").innerHTML = KEYS.map((k, i) => {
 }).join("");
 
 const flakes = document.querySelector(".flakes");
-for (let i = 0; i < 46; i++) {
-  const s = document.createElement("i");
-  s.style.cssText = `left:${Math.random() * 100}%;--s:${2 + Math.random() * 5}px;--t:${7 + Math.random() * 11}s;--d:${-Math.random() * 18}s;--x:${(Math.random() - 0.5) * 120}px`;
+// 近的雪花大、快、略糊；遠的小、慢、淡
+for (let i = 0; i < 64; i++) {
+  const s = document.createElement("i"), near = Math.random() ** 2;
+  s.style.cssText = `left:${Math.random() * 100}%;--s:${(1.8 + near * 5.5).toFixed(1)}px;--o:${(0.35 + near * 0.55).toFixed(2)};--b:${near > 0.7 ? 1 : 0}px;--t:${(20 - near * 11 + Math.random() * 3).toFixed(1)}s;--d:${(-Math.random() * 22).toFixed(1)}s;--x:${(8 + Math.random() * 26).toFixed(0)}px;--w:${(2.4 + Math.random() * 3).toFixed(1)}s`;
   flakes.appendChild(s);
 }
 
@@ -272,6 +273,67 @@ function select(i) {
   );
 }
 
+const GATE_W = 6.5; // 旗門半寬（公尺）
+
+/* ---------- 小地圖 ---------- */
+// 以自己為中心、前進方向朝上，看得到前方約 300 公尺的彎道、旗門與跳台
+const MINI_SPAN = 440;
+function drawMini() {
+  const cv = $("mini"), g = cv.getContext("2d"), r = G.run, size = cv.width, k = size / MINI_SPAN;
+  const fly = mode === "fly";
+  const p = r.at(G.s, {}), d = fly ? 0 : G.d;
+  const px = p.x - p.tz * d, pz = p.z + p.tx * d;
+  g.clearRect(0, 0, size, size);
+  g.save();
+  g.translate(size / 2, size * 0.68);
+  g.rotate(-Math.atan2(p.tz, p.tx) - Math.PI / 2);
+  g.scale(k, k);
+  g.translate(-px, -pz);
+  g.lineCap = g.lineJoin = "round";
+  const line = (pts, w, c) => {
+    g.beginPath();
+    pts.forEach((q, i) => g[i ? "lineTo" : "moveTo"](q[0], q[1]));
+    g.lineWidth = w;
+    g.strokeStyle = c;
+    g.stroke();
+  };
+  world.segs.forEach((sg) => line(sg.pts, 16, "rgba(255,255,255,.2)"));
+  line(r.pts, r.halfW * 2 + 12, DIFF[r.diff].color);
+  line(r.pts, r.halfW * 2, "#ffffff");
+  const dot = (x, z, rad, c) => {
+    g.fillStyle = c;
+    g.beginPath();
+    g.arc(x, z, rad, 0, 7);
+    g.fill();
+  };
+  const end = r.pts[r.n - 1];
+  dot(end[0], end[1], 14, "#ff5a1f");
+  if (!fly) {
+    for (const kk of G.kickers) {
+      const q = r.at(kk.s, {});
+      dot(q.x, q.z, 7, "#ffb400");
+    }
+    for (const gt of G.gates) {
+      const q = r.at(gt.s, {}), c = gt.hit ? "#2fd27a" : gt.done ? "#8d99a6" : gt.mats[1].color.getStyle();
+      for (const o of [-GATE_W, GATE_W]) dot(q.x - q.tz * (gt.d + o), q.z + q.tx * (gt.d + o), 4.5, c);
+    }
+  }
+  g.restore();
+  // 自己
+  g.save();
+  g.translate(size / 2, size * 0.68);
+  g.rotate(fly ? 0 : G.ang);
+  g.beginPath();
+  g.moveTo(0, -17); g.lineTo(11, 11); g.lineTo(0, 5); g.lineTo(-11, 11);
+  g.closePath();
+  g.lineWidth = 4;
+  g.strokeStyle = "#fff";
+  g.stroke();
+  g.fillStyle = "#ff5a1f";
+  g.fill();
+  g.restore();
+}
+
 /* ---------- 雪板 ---------- */
 let board = BOARDS[0];
 try {
@@ -364,32 +426,34 @@ function startSki() {
   G.skier = createSkier(board);
   grp.add(G.skier.group);
 
-  // 旗門
+  // 旗門：兩根桿子加上方橫幅，從中間穿過就算通過
   const gap = r.diff === 2 ? 85 : 110,
-    poleG = new THREE.CylinderGeometry(0.09, 0.09, 2.6, 5),
-    flagG = new THREE.PlaneGeometry(1.1, 0.75);
+    poleG = new THREE.CylinderGeometry(0.11, 0.11, 3.8, 6),
+    bannerG = new THREE.PlaneGeometry(GATE_W * 2, 0.9);
   G.gates = [];
   for (let s = 90, i = 0; s < r.L - 70; s += gap, i++) {
     const p = r.at(s),
-      d = (i % 2 ? 1 : -1) * r.halfW * 0.42,
+      d = (i % 2 ? 1 : -1) * r.halfW * 0.36,
       col = i % 2 ? "#1f6feb" : "#e23b2e";
     const mats = [
       new THREE.MeshLambertMaterial({ color: col }),
       new THREE.MeshBasicMaterial({ color: col, side: THREE.DoubleSide }),
     ];
-    for (const o of [-5.5, 5.5]) {
+    let top = -1e9;
+    for (const o of [-GATE_W, GATE_W]) {
       const x = p.x - p.tz * (d + o),
         z = p.z + p.tx * (d + o),
         y = world.heightAt(x, z);
       const pole = new THREE.Mesh(poleG, mats[0]);
-      pole.position.set(x, y + 1.3, z);
+      pole.position.set(x, y + 1.9, z);
       grp.add(pole);
-      const flag = new THREE.Mesh(flagG, mats[1]);
-      flag.position.set(x, y + 2.2, z);
-      flag.rotation.y = Math.atan2(p.tx, p.tz);
-      grp.add(flag);
+      top = Math.max(top, y);
     }
-    G.gates.push({ s, d, mats, done: false });
+    const banner = new THREE.Mesh(bannerG, mats[1]);
+    banner.position.set(p.x - p.tz * d, top + 3.45, p.z + p.tx * d);
+    banner.rotation.y = Math.atan2(p.tx, p.tz);
+    grp.add(banner);
+    G.gates.push({ s, d, mats, done: false, hit: false });
   }
   // 雪道邊界桿
   const edge = new THREE.InstancedMesh(
@@ -631,8 +695,11 @@ function stepSki(dt) {
   for (const g of G.gates) {
     if (g.done || g.s > G.s) continue;
     g.done = true;
-    if (g.s >= s0 - 30 && Math.abs(G.d - g.d) < 5.5) {
+    if (g.s >= s0 - 30 && Math.abs(G.d - g.d) < GATE_W + 0.6) {
       G.hits++;
+      g.hit = true;
+      g.mats.forEach((m) => m.color.set("#2fd27a"));
+      popup(`通過旗門 ${G.hits}/${G.gates.length}`);
       $("hGate").parentElement.classList.remove("pop");
       void $("hGate").offsetWidth;
       $("hGate").parentElement.classList.add("pop");
@@ -723,6 +790,7 @@ function updateHud() {
     r.h[Math.min(r.n - 1, Math.round(G.s / STEP))],
   ).toLocaleString();
   $("hDot").style.left = `${f * 100}%`;
+  drawMini();
   if (mode === "fly") {
     $("hSpeed").textContent = Math.round(Math.atan(r.at(G.s, P).grade) * 57.3);
     return;

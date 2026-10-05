@@ -170,21 +170,7 @@ h1 {
   height: 190px;
   z-index: 1;
 }
-.flakes i {
-  position: absolute;
-  top: -12px;
-  width: var(--s);
-  height: var(--s);
-  border-radius: 50%;
-  background: #fff;
-  opacity: 0.75;
-  animation: fall var(--t) var(--d) linear infinite;
-}
-@keyframes fall {
-  to {
-    transform: translate(var(--x), 105svh);
-  }
-}
+
 
 /* 雪票卡 */
 .tickets {
@@ -1002,3 +988,39 @@ footer {
 .touch > div { display: flex; gap: 12px; align-items: flex-end; }
 .touch #tJ { background: #ff5a1fcc; font-size: 1.2rem; font-weight: 700; }
 @media (max-width: 760px) { #gearDesc { display: none; } .gear { margin-top: 8px; padding-top: 8px; } }
+
+/* 小地圖 */
+#mini { position: absolute; right: 16px; top: calc(max(14px, env(safe-area-inset-top)) + 46px); width: 180px; height: 180px; border-radius: 8px; background: #0e1b2c99; border: 1.5px solid #ffffff55; backdrop-filter: blur(6px); }
+@media (max-width: 760px) { #mini { width: 118px; height: 118px; } }
+
+/* 首頁落雪：外層等速下落、內層左右飄，落下距離跟著主視覺高度走 */
+.flakes { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 1; container-type: size; }
+.flakes i { position: absolute; top: -14px; width: var(--s); height: var(--s); opacity: var(--o); filter: blur(var(--b)); animation: fall var(--t) var(--d) linear infinite; will-change: transform; }
+.flakes i::before { content: ""; position: absolute; inset: 0; border-radius: 50%; background: #fff; animation: sway var(--w) var(--d) ease-in-out infinite alternate; }
+@keyframes fall { to { transform: translate3d(0, 110svh, 0); } }
+@supports (height: 1cqh) { @keyframes fall { to { transform: translate3d(0, calc(100cqh + 28px), 0); } } }
+@keyframes sway { from { transform: translateX(calc(var(--x) * -1)); } to { transform: translateX(var(--x)); } }
+@media (prefers-reduced-motion: reduce) { .flakes { display: none; } }
+
+/* 首頁排版：寬螢幕標題與雪票卡左右並排，一個畫面看完 */
+.hero { padding-bottom: 150px; display: grid; align-items: center; }
+.ridge { height: 130px; }
+.hero-kanji { right: auto; left: 38%; top: -6vw; font-size: clamp(260px, 44vw, 640px); }
+.hero-inner { width: 100%; }
+h1 { font-size: clamp(2.9rem, 8vw, 6.2rem); }
+.lede { margin-bottom: 2.2rem; }
+@media (min-width: 1080px) {
+  .hero-inner { display: grid; grid-template-columns: minmax(0, 1fr) minmax(430px, 500px); column-gap: clamp(32px, 5vw, 72px); align-items: center; }
+  .hero-copy { grid-column: 1; }
+  .tickets { grid-column: 2; grid-template-columns: 1fr; gap: 18px; }
+  .lede { margin-bottom: 0; }
+  .t-main { padding: 20px 22px; }
+  .ticket h2 { font-size: 2rem; }
+  .t-stub { width: 132px; padding: 18px 12px; }
+  .t-stub b { font-size: 2.8rem; }
+}
+.band { padding-top: clamp(44px, 7vw, 88px); padding-bottom: clamp(44px, 7vw, 88px); }
+.compare { max-width: 880px; }
+.compare td { width: 38%; }
+.compare tbody tr:hover { background: #e8eef4; }
+.steps li { display: flex; flex-direction: column; }
