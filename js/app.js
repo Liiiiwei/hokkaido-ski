@@ -400,6 +400,30 @@ function clearGame() {
   G.group = null;
 }
 
+// 地面上的一點
+function ground(x, z) {
+  return { x, y: world.heightAt(x, z), z };
+}
+// 立在地面的桿子：往下多埋一截，斜坡上不會懸空
+function post(f, h, rad, mat) {
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(rad, rad, h + 3, 6), mat);
+  m.position.set(f.x, f.y + (h - 3) / 2, f.z);
+  return m;
+}
+// 橫幅：四個角接在兩根桿頂，地面一高一低也不會脫節
+function spanBanner(a, b, top, h, mat) {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute(
+    "position",
+    new THREE.Float32BufferAttribute(
+      [a.x, a.y + top, a.z, b.x, b.y + top, b.z, a.x, a.y + top - h, a.z, b.x, b.y + top - h, b.z],
+      3,
+    ),
+  );
+  g.setIndex([0, 2, 1, 1, 2, 3]);
+  return new THREE.Mesh(g, mat);
+}
+
 function startSki() {
   clearGame();
   const r = sel,
@@ -427,9 +451,7 @@ function startSki() {
   grp.add(G.skier.group);
 
   // 旗門：兩根桿子加上方橫幅，從中間穿過就算通過
-  const gap = r.diff === 2 ? 85 : 110,
-    poleG = new THREE.CylinderGeometry(0.11, 0.11, 3.8, 6),
-    bannerG = new THREE.PlaneGeometry(GATE_W * 2, 0.9);
+  const gap = r.diff === 2 ? 85 : 110;
   G.gates = [];
   for (let s = 90, i = 0; s < r.L - 70; s += gap, i++) {
     const p = r.at(s),
@@ -439,30 +461,21 @@ function startSki() {
       new THREE.MeshLambertMaterial({ color: col }),
       new THREE.MeshBasicMaterial({ color: col, side: THREE.DoubleSide }),
     ];
-    let top = -1e9;
-    for (const o of [-GATE_W, GATE_W]) {
-      const x = p.x - p.tz * (d + o),
-        z = p.z + p.tx * (d + o),
-        y = world.heightAt(x, z);
-      const pole = new THREE.Mesh(poleG, mats[0]);
-      pole.position.set(x, y + 1.9, z);
-      grp.add(pole);
-      top = Math.max(top, y);
-    }
-    const banner = new THREE.Mesh(bannerG, mats[1]);
-    banner.position.set(p.x - p.tz * d, top + 3.45, p.z + p.tx * d);
-    banner.rotation.y = Math.atan2(p.tx, p.tz);
-    grp.add(banner);
+    const feet = [-GATE_W, GATE_W].map((o) =>
+      ground(p.x - p.tz * (d + o), p.z + p.tx * (d + o)),
+    );
+    for (const f of feet) grp.add(post(f, 4, 0.11, mats[0]));
+    grp.add(spanBanner(feet[0], feet[1], 4, 0.95, mats[1]));
     G.gates.push({ s, d, mats, done: false, hit: false });
   }
   // 雪道邊界桿
   const edge = new THREE.InstancedMesh(
     new THREE.CylinderGeometry(0.07, 0.07, 1.8, 4),
     new THREE.MeshBasicMaterial({ color: "#ff8a3c" }),
-    Math.ceil(r.L / 24) * 2,
+    Math.ceil(r.L / 12) * 2,
   );
   const m4 = new THREE.Matrix4();
-  for (let s = 0, k = 0; s < r.L; s += 24)
+  for (let s = 0, k = 0; s < r.L; s += 12)
     for (const side of [-1, 1]) {
       const p = r.at(s),
         x = p.x - p.tz * side * r.halfW,
@@ -473,6 +486,50 @@ function startSki() {
       );
     }
   grp.add(edge);
+  // 兩側邊線與地面箭頭：一眼看出雪道往哪裡走
+  const LIFT = 0.3,
+    lineV = [],
+    arrowV = [];
+  const put = (arr, q, f, w) => {
+    const x = q.x + q.tx * f - q.tz * w,
+      z = q.z + q.tz * f + q.tx * w;
+    arr.push(x, world.surfaceAt(x, z) + LIFT, z);
+  };
+  for (let s = 0; s < r.L - 6; s += 6) {
+    const a = r.at(s),
+      b = r.at(s + 6);
+    for (const side of [-1, 1]) {
+      const w0 = side * (r.halfW - 0.5),
+        w1 = side * (r.halfW + 0.5);
+      put(lineV, a, 0, w0), put(lineV, a, 0, w1), put(lineV, b, 0, w0);
+      put(lineV, a, 0, w1), put(lineV, b, 0, w1), put(lineV, b, 0, w0);
+    }
+  }
+  // 箭頭：左右兩臂各切成小段，順著地形起伏；尖端朝前
+  const ARM = 3.2,
+    N = 4;
+  for (let s = 14; s < r.L - 24; s += 16) {
+    const q = r.at(s);
+    for (const side of [-1, 1])
+      for (let i = 0; i < N; i++) {
+        const w0 = (side * ARM * i) / N,
+          w1 = (side * ARM * (i + 1)) / N,
+          f0 = 1.6 - (2.1 * i) / N,
+          f1 = 1.6 - (2.1 * (i + 1)) / N;
+        put(arrowV, q, f0, w0), put(arrowV, q, f1, w1), put(arrowV, q, f0 - 1.1, w0);
+        put(arrowV, q, f1, w1), put(arrowV, q, f1 - 1.1, w1), put(arrowV, q, f0 - 1.1, w0);
+      }
+  }
+  for (const [arr, color, opacity] of [[lineV, "#ff8a3c", 0.75], [arrowV, "#ff5a1f", 0.62]]) {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(arr, 3));
+    grp.add(
+      new THREE.Mesh(
+        g,
+        new THREE.MeshBasicMaterial({ color, transparent: true, opacity, side: THREE.DoubleSide, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }),
+      ),
+    );
+  }
   // 跳台：排在旗門之間
   G.kickers = [];
   const KL = 7, KW = 7.5, KH = 1.5;
@@ -495,23 +552,14 @@ function startSki() {
   }
   // 終點
   const e = r.at(r.L - 16),
-    fin = new THREE.Mesh(
-      new THREE.PlaneGeometry(r.halfW * 2, 2.2),
-      new THREE.MeshBasicMaterial({ color: "#ff5a1f", side: THREE.DoubleSide }),
-    );
-  fin.position.set(e.x, world.heightAt(e.x, e.z) + 5.5, e.z);
-  fin.rotation.y = Math.atan2(e.tx, e.tz);
-  grp.add(fin);
-  for (const side of [-1, 1]) {
-    const x = e.x - e.tz * side * r.halfW,
-      z = e.z + e.tx * side * r.halfW;
-    const post = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.18, 0.18, 6.6, 6),
-      new THREE.MeshLambertMaterial({ color: "#22303f" }),
-    );
-    post.position.set(x, world.heightAt(x, z) + 3.3, z);
-    grp.add(post);
-  }
+    ends = [-1, 1].map((side) =>
+      ground(e.x - e.tz * side * r.halfW, e.z + e.tx * side * r.halfW),
+    ),
+    postMat = new THREE.MeshLambertMaterial({ color: "#22303f" });
+  for (const f of ends) grp.add(post(f, 6.8, 0.18, postMat));
+  grp.add(
+    spanBanner(ends[0], ends[1], 6.8, 2.2, new THREE.MeshBasicMaterial({ color: "#ff5a1f", side: THREE.DoubleSide })),
+  );
   // 雪花飛濺
   G.sprayN = 140;
   G.sprayI = 0;
@@ -634,17 +682,18 @@ function stepSki(dt) {
   const steer = (input.right ? 1 : 0) - (input.left ? 1 : 0);
   G.ang += (steer * 0.82 - G.ang) * Math.min(1, dt * (G.air ? 1.1 : 3.4 * B.turn));
   r.at(G.s, P);
-  const sin = P.grade / Math.hypot(1, P.grade);
+  const sin = Math.max(0.1, P.grade / Math.hypot(1, P.grade)); // 平緩段也保有基本下滑力
   const drag = (input.tuck ? 0.0027 : 0.0045) * B.drag * G.v * G.v;
   let a = 9.81 * sin * Math.cos(G.ang) - drag;
   if (G.air) a *= 0.7; // 騰空時不吃雪面阻力，也不能煞車
   else {
     a -= 0.29 + Math.abs(G.ang) * 0.11 * G.v;
     if (input.brake) a -= 7.5;
+    else if (G.push > 0) a += 3; // 起步撐杖推進
     const over = Math.abs(G.d) - r.halfW;
-    if (over > 0) a -= (2.5 + over * 0.7) * B.powder; // 衝出壓雪區，深雪拖慢
+    if (over > 0) a -= (1.6 + over * 0.4) * B.powder; // 衝出壓雪區，深雪拖慢
   }
-  G.v = Math.max(input.brake && !G.air ? 0 : 2.5, G.v + a * dt);
+  G.v = Math.max(input.brake && !G.air ? 0 : 4.5, G.v + a * dt);
 
   // 跳台與騰空
   if (G.air) {
@@ -887,8 +936,8 @@ function loop(now) {
     placeSkier(dt, "count");
     updateHud();
     if (G.cd <= -0.5) {
-      G.v = 3;
-      G.push = 1.4;
+      G.v = 6;
+      G.push = 1.6;
       G.t = 0;
       setMode("ski");
     }
@@ -991,3 +1040,6 @@ $("gear").addEventListener("click", (e) => {
   } catch {}
   renderGear();
 });
+
+// 除錯用：網址加上 #debug 才會掛出狀態
+if (location.hash === "#debug") window.__ski = { G, input, world: () => world };

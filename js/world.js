@@ -58,6 +58,22 @@ export function buildWorld(data, { lowPower = false } = {}) {
     );
   }
 
+  // 與地形三角網格完全一致的表面高度（貼地的線條、箭頭用這個才不會被雪面吃掉）
+  function surfaceAt(x, z) {
+    const gx = clamp((x - x0) / cell, 0, gw - 1.001),
+      gz = clamp((z - z0) / cell, 0, gh - 1.001);
+    const i = gx | 0,
+      j = gz | 0,
+      a = gx - i,
+      b = gz - j,
+      k = j * gw + i;
+    return a + b <= 1
+      ? H[k] + (H[k + 1] - H[k]) * a + (H[k + gw] - H[k]) * b
+      : H[k + gw + 1] +
+          (H[k + gw] - H[k + gw + 1]) * (1 - a) +
+          (H[k + 1] - H[k + gw + 1]) * (1 - b);
+  }
+
   const scene = new THREE.Scene();
   const horizon = new THREE.Color("#dbe7f1");
   scene.fog = new THREE.FogExp2(horizon, 0.00011);
@@ -448,6 +464,7 @@ export function buildWorld(data, { lowPower = false } = {}) {
     scene,
     runs,
     heightAt,
+    surfaceAt,
     ribbon,
     mapLayer,
     liftGroup,
