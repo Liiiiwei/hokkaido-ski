@@ -1,0 +1,8 @@
+[out:json][timeout:60];
+(
+  way["piste:type"](43.03,140.95,43.12,141.25);
+  way["aerialway"](43.03,140.95,43.12,141.25);
+  relation["piste:type"](43.03,140.95,43.12,141.25);
+  nwr["landuse"="winter_sports"](43.03,140.95,43.12,141.25);
+);
+out tags geom;

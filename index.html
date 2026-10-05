@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <title>出發前，先滑一遍｜札幌手稻 × 札幌國際</title>
+    <meta
+      name="description"
+      content="用真實地形預覽札幌手稻與札幌國際滑雪場的雪道，還能實際操控滑一趟。"
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700&family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@700;900&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%276%27 fill=%27%230e1b2c%27/%3E%3Cpath d=%27M4 24 13 9l5 8 3-4 7 11z%27 fill=%27%23fff%27/%3E%3C/svg%3E">
+    <link rel="stylesheet" href="css/style.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "./vendor/three.module.min.js",
+          "three/addons/": "./vendor/"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <main id="landing">
+      <section class="hero">
+        <div class="flakes" aria-hidden="true"></div>
+        <div class="hero-kanji" aria-hidden="true">雪</div>
+        <div class="hero-inner">
+          <p class="eyebrow">北海道札幌｜2026–27 雪季</p>
+          <h1>出發前，<br />先滑一遍。</h1>
+          <p class="lede">
+            札幌手稻與札幌國際，兩座雪場的真實地形與雪道都搬進來了。先看每條雪道怎麼走、有多陡，再自己滑下去試試。
+          </p>
+          <div class="tickets" id="tickets"></div>
+        </div>
+        <svg
+          class="ridge"
+          viewBox="0 0 1440 220"
+          preserveAspectRatio="none"
+          aria-hidden="true"
+        >
+          <path
+            d="M0 150 L140 96 L250 132 L420 40 L560 118 L690 70 L860 138 L1010 58 L1160 122 L1300 84 L1440 136 V220 H0Z"
+            fill="#17304a"
+          />
+          <path
+            d="M0 186 L180 140 L330 172 L520 110 L700 168 L880 124 L1080 176 L1260 132 L1440 170 V220 H0Z"
+            fill="#f3f6f9"
+          />
+        </svg>
+      </section>
+
+      <section class="band">
+        <h2><span>01</span>兩座雪場比一比</h2>
+        <div class="table-wrap">
+          <table class="compare" id="compare"></table>
+        </div>
+      </section>
+
+      <div id="resorts"></div>
+
+      <section class="band howto">
+        <h2><span>04</span>怎麼玩</h2>
+        <ol class="steps">
+          <li><b>挑雪場</b>進入 3D 地形，拖曳旋轉、滾輪或雙指縮放。</li>
+          <li><b>挑雪道</b>點清單或地圖上的名稱，看長度、落差與坡度剖面。</li>
+          <li><b>飛覽</b>鏡頭沿雪道從頭飛到尾，先認路。</li>
+          <li>
+            <b>開滑</b
+            >左右鍵轉彎、下鍵煞車、上鍵蹲低加速，穿過旗門衝到終點。手機用畫面上的按鈕。
+          </li>
+        </ol>
+      </section>
+
+      <footer>
+        <p>
+          地形高程：Mapzen Terrain Tiles（AWS 開放資料）。雪道與纜車路線：©
+          OpenStreetMap 貢獻者。
+        </p>
+        <p>
+          雪場數據取自兩座雪場官方網站，查證日 2026 年 10 月 5
+          日；營業時間、票價與交通請以官方最新公告為準。
+        </p>
+      </footer>
+    </main>
+
+    <div id="app" hidden>
+      <canvas id="gl"></canvas>
+      <div id="labels"></div>
+
+      <header class="bar">
+        <button id="btnBack" class="ghost">← 返回</button>
+        <nav class="tabs" id="tabs"></nav>
+      </header>
+
+      <aside id="panel">
+        <h3>雪道</h3>
+        <ul id="runList"></ul>
+        <p class="hint">拖曳旋轉、滾輪縮放</p>
+      </aside>
+
+      <section id="card" hidden>
+        <button class="x" id="cardClose" aria-label="關閉">×</button>
+        <p class="zone" id="cZone"></p>
+        <h3 id="cName"></h3>
+        <p class="ja" id="cJa"></p>
+        <dl id="cStats"></dl>
+        <svg
+          id="cProfile"
+          viewBox="0 0 300 70"
+          preserveAspectRatio="none"
+        ></svg>
+        <p class="note">長度與坡度依地形資料估算</p>
+        <div class="actions">
+          <button id="btnFly" class="ghost dark">飛覽預覽</button>
+          <button id="btnSki" class="solid">開始滑行</button>
+        </div>
+      </section>
+
+      <div id="hud" hidden>
+        <div class="hud-top">
+          <button id="btnQuit" class="ghost">× 結束</button>
+          <div class="hud-name" id="hName"></div>
+          <div class="hud-time" id="hTime">0:00.0</div>
+        </div>
+        <div class="hud-speed"><b id="hSpeed">0</b><span id="hUnit">km/h</span></div>
+        <div class="hud-side">
+          <div><span>海拔</span><b id="hAlt">0</b> m</div>
+          <div><span>剩餘</span><b id="hLeft">0</b> m</div>
+          <div class="gates"><span>旗門</span><b id="hGate">0</b></div>
+        </div>
+        <div class="hud-profile">
+          <svg
+            id="hProfile"
+            viewBox="0 0 300 40"
+            preserveAspectRatio="none"
+          ></svg
+          ><i id="hDot"></i>
+        </div>
+        <div class="touch">
+          <button id="tL" aria-label="左轉">◀</button>
+          <button id="tB">煞車</button>
+          <button id="tR" aria-label="右轉">▶</button>
+        </div>
+      </div>
+
+      <div id="count" hidden></div>
+
+      <div id="result" class="sheet" hidden>
+        <div class="sheet-in">
+          <p class="eyebrow">抵達終點</p>
+          <h3 id="rName"></h3>
+          <div class="big" id="rTime"></div>
+          <p class="best" id="rBest"></p>
+          <dl id="rStats"></dl>
+          <div class="actions">
+            <button id="btnOther" class="ghost dark">換一條雪道</button>
+            <button id="btnAgain" class="solid">再滑一次</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="loading" class="sheet" hidden>
+        <div class="sheet-in center">
+          <div class="spin"></div>
+          <p>正在堆雪…</p>
+        </div>
+      </div>
+      <div id="error" class="sheet" hidden>
+        <div class="sheet-in center">
+          <h3>雪場載入失敗</h3>
+          <p id="errMsg"></p>
+          <div class="actions">
+            <button id="btnErrBack" class="ghost dark">返回</button
+            ><button id="btnRetry" class="solid">重試</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="js/app.js"></script>
+  </body>
+</html>
