@@ -71,11 +71,10 @@
         <h2><span>04</span>怎麼玩</h2>
         <ol class="steps">
           <li><b>挑雪場</b>進入 3D 地形，拖曳旋轉、滾輪或雙指縮放。</li>
-          <li><b>挑雪道</b>點清單或地圖上的名稱，看長度、落差與坡度剖面。</li>
+          <li><b>挑雪道與雪板</b>點清單或地圖上的名稱，看長度、落差與坡度剖面。</li>
           <li><b>飛覽</b>鏡頭沿雪道從頭飛到尾，先認路。</li>
           <li>
-            <b>開滑</b
-            >左右鍵轉彎、下鍵煞車、上鍵蹲低加速，穿過旗門衝到終點。手機用畫面上的按鈕。
+            <b>開滑</b>方向鍵或 WASD：左右轉彎、下煞車、上蹲低加速。空白鍵跳躍，騰空時再按一次做特技，同時按住上或下會變成空翻。手機用畫面上的按鈕。
           </li>
         </ol>
       </section>
@@ -119,6 +118,7 @@
           preserveAspectRatio="none"
         ></svg>
         <p class="note">長度與坡度依地形資料估算</p>
+        <div class="gear"><div id="gear"></div><p id="gearDesc"></p></div>
         <div class="actions">
           <button id="btnFly" class="ghost dark">飛覽預覽</button>
           <button id="btnSki" class="solid">開始滑行</button>
@@ -136,6 +136,7 @@
           <div><span>海拔</span><b id="hAlt">0</b> m</div>
           <div><span>剩餘</span><b id="hLeft">0</b> m</div>
           <div class="gates"><span>旗門</span><b id="hGate">0</b></div>
+          <div class="tricks"><span>特技</span><b id="hTrick">0</b></div>
         </div>
         <div class="hud-profile">
           <svg
@@ -146,10 +147,10 @@
           ><i id="hDot"></i>
         </div>
         <div class="touch">
-          <button id="tL" aria-label="左轉">◀</button>
-          <button id="tB">煞車</button>
-          <button id="tR" aria-label="右轉">▶</button>
+          <div><button id="tL" aria-label="左轉">◀</button><button id="tR" aria-label="右轉">▶</button></div>
+          <div><button id="tB">煞車</button><button id="tJ">跳</button></div>
         </div>
+        <div id="pop"></div>
       </div>
 
       <div id="count" hidden></div>

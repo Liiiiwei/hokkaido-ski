@@ -2,7 +2,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/OrbitControls.js";
 import { buildWorld, DIFF, STEP } from "./world.js";
-import { createSkier } from "./skier.js";
+import { createSkier, BOARDS } from "./skier.js";
 import { FACTS, COMPARE_ROWS } from "./facts.js";
 
 const $ = (id) => document.getElementById(id);
@@ -272,6 +272,19 @@ function select(i) {
   );
 }
 
+/* ---------- 雪板 ---------- */
+let board = BOARDS[0];
+try {
+  board = BOARDS.find((b) => b.id === localStorage.getItem("board")) || board;
+} catch {}
+function renderGear() {
+  $("gear").innerHTML = BOARDS.map(
+    (b) => `<button data-board="${b.id}" class="${b === board ? "on" : ""}" style="--c:${b.color}"><i></i>${b.name}</button>`,
+  ).join("");
+  $("gearDesc").textContent = board.desc;
+}
+renderGear();
+
 function setMode(m) {
   mode = m;
   $("app").dataset.mode = m;
@@ -337,11 +350,18 @@ function startSki() {
   G.t = 0;
   G.max = 0;
   G.hits = 0;
+  G.board = board;
+  G.y = 0;
+  G.vy = 0;
+  G.air = false;
+  G.onRamp = false;
+  G.trick = null;
+  G.score = 0;
   G.cd = 3.2;
   G.snap = true;
   G.pitch = 0;
   G.push = 0;
-  G.skier = createSkier();
+  G.skier = createSkier(board);
   grp.add(G.skier.group);
 
   // 旗門
@@ -389,6 +409,26 @@ function startSki() {
       );
     }
   grp.add(edge);
+  // 跳台：排在旗門之間
+  G.kickers = [];
+  const KL = 7, KW = 7.5, KH = 1.5;
+  const wedge = new THREE.BufferGeometry();
+  const A = [-KW / 2, 0, -KL], B2 = [KW / 2, 0, -KL], C = [-KW / 2, 0, 0], D = [KW / 2, 0, 0], E = [-KW / 2, KH, 0], F = [KW / 2, KH, 0];
+  wedge.setAttribute("position", new THREE.Float32BufferAttribute([A, E, B2, B2, E, F, C, D, E, D, F, E, A, C, E, B2, F, D].flat(), 3));
+  wedge.computeVertexNormals();
+  const wedgeMat = new THREE.MeshStandardMaterial({ color: "#f4f9ff", roughness: 0.9, side: THREE.DoubleSide });
+  const lipMat = new THREE.MeshBasicMaterial({ color: "#ff5a1f" });
+  for (let s = 90 + gap * 1.5; s < r.L - 120; s += gap * 2) {
+    const p = r.at(s), y = world.heightAt(p.x, p.z), ya = world.heightAt(p.x + p.tx * 3, p.z + p.tz * 3);
+    const k = new THREE.Mesh(wedge, wedgeMat);
+    k.position.set(p.x, y - 0.25, p.z);
+    k.rotation.set(Math.atan2(y - ya, 3), Math.atan2(p.tx, p.tz), 0, "YXZ");
+    const lip = new THREE.Mesh(new THREE.BoxGeometry(KW, 0.12, 0.3), lipMat);
+    lip.position.set(0, KH, -0.1);
+    k.add(lip);
+    grp.add(k);
+    G.kickers.push({ s, d: 0, len: KL, w: KW, h: KH });
+  }
   // 終點
   const e = r.at(r.L - 16),
     fin = new THREE.Mesh(
@@ -466,6 +506,9 @@ function placeSkier(dt, cam = "ski") {
     brake: input.brake,
     tuck: input.tuck,
     push: G.push,
+    y: G.y,
+    air: G.air,
+    trick: G.trick,
   });
 
   // 鏡頭跟在路線方向後方，轉彎時畫面才不會亂晃
@@ -523,19 +566,60 @@ function stepSki(dt) {
   const r = G.run;
   G.t += dt;
   G.push = Math.max(0, G.push - dt);
+  const B = G.board;
   const steer = (input.right ? 1 : 0) - (input.left ? 1 : 0);
-  G.ang += (steer * 0.82 - G.ang) * Math.min(1, dt * 3.4);
+  G.ang += (steer * 0.82 - G.ang) * Math.min(1, dt * (G.air ? 1.1 : 3.4 * B.turn));
   r.at(G.s, P);
   const sin = P.grade / Math.hypot(1, P.grade);
-  let a =
-    9.81 * sin * Math.cos(G.ang) -
-    0.29 -
-    (input.tuck ? 0.0027 : 0.0045) * G.v * G.v -
-    Math.abs(G.ang) * 0.11 * G.v;
-  if (input.brake) a -= 7.5;
-  const over = Math.abs(G.d) - r.halfW;
-  if (over > 0) a -= 2.5 + over * 0.7; // 衝出壓雪區，深雪拖慢
-  G.v = Math.max(input.brake ? 0 : 2.5, G.v + a * dt);
+  const drag = (input.tuck ? 0.0027 : 0.0045) * B.drag * G.v * G.v;
+  let a = 9.81 * sin * Math.cos(G.ang) - drag;
+  if (G.air) a *= 0.7; // 騰空時不吃雪面阻力，也不能煞車
+  else {
+    a -= 0.29 + Math.abs(G.ang) * 0.11 * G.v;
+    if (input.brake) a -= 7.5;
+    const over = Math.abs(G.d) - r.halfW;
+    if (over > 0) a -= (2.5 + over * 0.7) * B.powder; // 衝出壓雪區，深雪拖慢
+  }
+  G.v = Math.max(input.brake && !G.air ? 0 : 2.5, G.v + a * dt);
+
+  // 跳台與騰空
+  if (G.air) {
+    G.vy -= 15 * dt;
+    G.y += G.vy * dt;
+    if (G.trick) {
+      G.trick.p += dt / 0.62;
+      if (G.trick.p >= 1) {
+        const pts = Math.round((G.trick.type === "spin" ? 300 : 500) * B.trick);
+        G.score += pts;
+        popup(`${G.trick.name} +${pts}`);
+        G.trick = null;
+      }
+    }
+    if (G.y <= 0) {
+      G.y = 0;
+      G.air = false;
+      burst(14);
+      if (G.trick) {
+        G.trick = null;
+        G.v *= 0.45;
+        popup("落地失誤");
+      }
+    }
+  } else {
+    let ramp = 0;
+    for (const k of G.kickers) {
+      const u = (G.s - (k.s - k.len)) / k.len;
+      if (u > 0 && u < 1 && Math.abs(G.d - k.d) < k.w / 2) ramp = k.h * u;
+    }
+    if (ramp > 0) {
+      G.y = ramp;
+      G.onRamp = true;
+    } else if (G.onRamp) {
+      G.onRamp = false;
+      G.air = true;
+      G.vy = Math.min(10.5, 3.5 + G.v * 0.26) * B.jump;
+    } else G.y = 0;
+  }
   const s0 = G.s;
   G.s += G.v * Math.cos(G.ang) * dt;
   G.d = Math.max(
@@ -556,7 +640,7 @@ function stepSki(dt) {
   }
 
   // 雪花飛濺
-  const emit = G.v > 4 && (Math.abs(G.ang) > 0.25 || input.brake) ? 3 : 0;
+  const emit = !G.air && G.v > 4 && (Math.abs(G.ang) > 0.25 || input.brake) ? 3 : 0;
   const pos = skierPos(tA);
   for (let i = 0; i < emit; i++) {
     const k = G.sprayI++ % G.sprayN;
@@ -594,6 +678,43 @@ function stepSki(dt) {
   if (G.s >= r.L - 4) finish();
 }
 
+// 空白鍵：在地面是跳，騰空時再按一次做特技
+function pressJump() {
+  if (mode !== "ski") return;
+  if (!G.air) {
+    G.air = true;
+    G.onRamp = false;
+    G.vy = 6.4 * G.board.jump;
+    burst(8);
+  } else if (!G.trick) {
+    const dir = input.left ? 1 : -1;
+    G.trick = input.tuck
+      ? { type: "front", name: "前空翻", p: 0 }
+      : input.brake
+        ? { type: "back", name: "後空翻", p: 0 }
+        : { type: "spin", name: "360 轉體", dir, p: 0 };
+    G.vy = Math.max(G.vy, 0) + 3.4; // 再推一把，讓動作轉得完
+  }
+}
+
+function popup(text) {
+  const el = $("pop");
+  el.textContent = text;
+  el.classList.remove("show");
+  void el.offsetWidth;
+  el.classList.add("show");
+}
+
+// 起跳與落地的一圈雪花
+function burst(n) {
+  const pos = skierPos(tA);
+  for (let i = 0; i < n; i++) {
+    const k = G.sprayI++ % G.sprayN, a = Math.random() * 6.28;
+    G.sprayP.set([pos.x, pos.y + 0.2, pos.z], k * 3);
+    G.sprayV.set([Math.cos(a) * 4, 1.5 + Math.random() * 2.5, Math.sin(a) * 4, 0.6], k * 4);
+  }
+}
+
 function updateHud() {
   const r = G.run,
     f = Math.min(1, G.s / r.L);
@@ -609,6 +730,7 @@ function updateHud() {
   $("hSpeed").textContent = Math.round(G.v * 3.6);
   $("hTime").textContent = fmtTime(G.t);
   $("hGate").textContent = `${G.hits}/${G.gates.length}`;
+  $("hTrick").textContent = G.score.toLocaleString();
 }
 
 function finish() {
@@ -634,7 +756,7 @@ function finish() {
     ["最高時速", `${Math.round(G.max * 3.6)} km/h`],
     ["平均時速", `${Math.round((r.L / G.t) * 3.6)} km/h`],
     ["旗門", `${G.hits}/${G.gates.length}`],
-    ["落差", `${r.drop} m`],
+    ["特技分", G.score.toLocaleString()],
   ]
     .map((s) => `<div><dt>${s[0]}</dt><dd>${s[1]}</dd></div>`)
     .join("");
@@ -745,7 +867,6 @@ const keyMap = {
   ArrowDown: "brake",
   s: "brake",
   S: "brake",
-  " ": "brake",
   ArrowUp: "tuck",
   w: "tuck",
   W: "tuck",
@@ -758,6 +879,11 @@ const onKey = (down) => (e) => {
     mode !== "explore"
   )
     return backToExplore();
+  if (e.key === " " && (mode === "ski" || mode === "count")) {
+    e.preventDefault();
+    if (down && !e.repeat) pressJump();
+    return;
+  }
   const k = keyMap[e.key];
   if (!k || (mode !== "ski" && mode !== "count")) return;
   input[k] = down;
@@ -784,3 +910,16 @@ for (const [id, k] of [
     el.addEventListener(ev, set(false));
   el.addEventListener("contextmenu", (e) => e.preventDefault());
 }
+$("tJ").addEventListener("pointerdown", (e) => {
+  e.preventDefault();
+  pressJump();
+});
+$("gear").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  board = BOARDS.find((x) => x.id === b.dataset.board);
+  try {
+    localStorage.setItem("board", board.id);
+  } catch {}
+  renderGear();
+});

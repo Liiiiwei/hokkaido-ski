@@ -986,3 +986,19 @@ footer {
     animation-duration: 0.01ms !important;
   }
 }
+
+/* 雪板選擇 */
+.gear { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+#gear { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+#gear button { display: flex; align-items: center; gap: .5em; padding: .5em .7em; border: 1.5px solid var(--line); border-radius: 3px; font-size: .88rem; font-weight: 500; text-align: left; }
+#gear button i { width: 22px; height: 7px; border-radius: 4px; background: var(--c); flex: none; }
+#gear button.on { border-color: var(--ink); background: var(--ink); color: #fff; }
+#gearDesc { font-size: .78rem; color: #33475b; margin-top: 8px; min-height: 2.6em; line-height: 1.5; }
+/* 特技提示 */
+#pop { position: absolute; left: 50%; top: 24%; transform: translateX(-50%); font: 900 clamp(1.6rem, 5vw, 2.8rem) var(--serif); color: #ffd23c; white-space: nowrap; opacity: 0; pointer-events: none; text-shadow: 0 3px 0 #0e1b2c, 0 6px 24px #0e1b2c99; }
+#pop.show { animation: popup 1.3s both; }
+@keyframes popup { 0% { opacity: 0; transform: translate(-50%, 20px) scale(.6); } 15% { opacity: 1; transform: translate(-50%, 0) scale(1.12); } 25% { transform: translate(-50%, 0) scale(1); } 75% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -26px); } }
+#hud.fly .tricks { display: none; }
+.touch > div { display: flex; gap: 12px; align-items: flex-end; }
+.touch #tJ { background: #ff5a1fcc; font-size: 1.2rem; font-weight: 700; }
+@media (max-width: 760px) { #gearDesc { display: none; } .gear { margin-top: 8px; padding-top: 8px; } }
