@@ -298,8 +298,19 @@ function drawMini() {
     g.stroke();
   };
   world.segs.forEach((sg) => line(sg.pts, 16, "rgba(255,255,255,.2)"));
-  line(r.pts, r.halfW * 2 + 12, DIFF[r.diff].color);
-  line(r.pts, r.halfW * 2, "#ffffff");
+  // 本雪道依各段實際寬度畫，只畫小地圖範圍內的部分
+  const i0 = Math.max(0, Math.floor((G.s - 260) / STEP)),
+    i1 = Math.min(r.n - 1, Math.ceil((G.s + 420) / STEP));
+  for (const [extra, c] of [[12, DIFF[r.diff].color], [0, "#ffffff"]]) {
+    g.strokeStyle = c;
+    for (let i = i0; i < i1; i++) {
+      g.beginPath();
+      g.moveTo(r.pts[i][0], r.pts[i][1]);
+      g.lineTo(r.pts[i + 1][0], r.pts[i + 1][1]);
+      g.lineWidth = r.w[i] * 2 + extra;
+      g.stroke();
+    }
+  }
   const dot = (x, z, rad, c) => {
     g.fillStyle = c;
     g.beginPath();
@@ -455,7 +466,7 @@ function startSki() {
   G.gates = [];
   for (let s = 90, i = 0; s < r.L - 70; s += gap, i++) {
     const p = r.at(s),
-      d = (i % 2 ? 1 : -1) * r.halfW * 0.36,
+      d = (i % 2 ? 1 : -1) * Math.max(0, Math.min(r.wAt(s) * 0.36, r.wAt(s) - GATE_W - 1)),
       col = i % 2 ? "#1f6feb" : "#e23b2e";
     const mats = [
       new THREE.MeshLambertMaterial({ color: col }),
@@ -478,8 +489,9 @@ function startSki() {
   for (let s = 0, k = 0; s < r.L; s += 12)
     for (const side of [-1, 1]) {
       const p = r.at(s),
-        x = p.x - p.tz * side * r.halfW,
-        z = p.z + p.tx * side * r.halfW;
+        w = r.wAt(s),
+        x = p.x - p.tz * side * w,
+        z = p.z + p.tx * side * w;
       edge.setMatrixAt(
         k++,
         m4.makeTranslation(x, world.heightAt(x, z) + 0.9, z),
@@ -499,10 +511,10 @@ function startSki() {
     const a = r.at(s),
       b = r.at(s + 6);
     for (const side of [-1, 1]) {
-      const w0 = side * (r.halfW - 0.5),
-        w1 = side * (r.halfW + 0.5);
-      put(lineV, a, 0, w0), put(lineV, a, 0, w1), put(lineV, b, 0, w0);
-      put(lineV, a, 0, w1), put(lineV, b, 0, w1), put(lineV, b, 0, w0);
+      const wa = r.wAt(s),
+        wb = r.wAt(s + 6);
+      put(lineV, a, 0, side * (wa - 0.5)), put(lineV, a, 0, side * (wa + 0.5)), put(lineV, b, 0, side * (wb - 0.5));
+      put(lineV, a, 0, side * (wa + 0.5)), put(lineV, b, 0, side * (wb + 0.5)), put(lineV, b, 0, side * (wb - 0.5));
     }
   }
   // 箭頭：左右兩臂各切成小段，順著地形起伏；尖端朝前
@@ -553,26 +565,58 @@ function startSki() {
   // 終點
   const e = r.at(r.L - 16),
     ends = [-1, 1].map((side) =>
-      ground(e.x - e.tz * side * r.halfW, e.z + e.tx * side * r.halfW),
+      ground(e.x - e.tz * side * r.wAt(r.L - 16), e.z + e.tx * side * r.wAt(r.L - 16)),
     ),
     postMat = new THREE.MeshLambertMaterial({ color: "#22303f" });
   for (const f of ends) grp.add(post(f, 6.8, 0.18, postMat));
   grp.add(
     spanBanner(ends[0], ends[1], 6.8, 2.2, new THREE.MeshBasicMaterial({ color: "#ff5a1f", side: THREE.DoubleSide })),
   );
-  // 雪花飛濺
-  G.sprayN = 140;
+  // 雪霧：每顆粒子有自己的大小與壽命，會擴散、變淡
+  const SN = (G.sprayN = lowPower ? 360 : 800);
   G.sprayI = 0;
-  G.sprayP = new Float32Array(G.sprayN * 3).fill(-9999);
-  G.sprayV = new Float32Array(G.sprayN * 4);
+  G.sprayAcc = 0;
+  G.sprayP = new Float32Array(SN * 3).fill(-9999);
+  G.sprayV = new Float32Array(SN * 3);
+  G.sprayL = new Float32Array(SN * 2); // 剩餘壽命、總壽命
+  G.sprayF = new Float32Array(SN);
+  G.sprayS = new Float32Array(SN);
   const sg = new THREE.BufferGeometry();
   sg.setAttribute("position", new THREE.BufferAttribute(G.sprayP, 3));
+  sg.setAttribute("aFade", new THREE.BufferAttribute(G.sprayF, 1));
+  sg.setAttribute("aSize", new THREE.BufferAttribute(G.sprayS, 1));
   G.spray = new THREE.Points(
     sg,
-    new THREE.PointsMaterial({ color: "#ffffff", size: 0.42, map: dotTexture(), transparent: true, opacity: 0.9, depthWrite: false }),
+    new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      uniforms: { uScale: { value: renderer.domElement.height * 0.9 } },
+      vertexShader: `attribute float aFade; attribute float aSize; uniform float uScale; varying float vF;
+        void main(){ vF = aFade; vec4 mv = modelViewMatrix * vec4(position, 1.0);
+          gl_PointSize = aSize * (1.0 + (1.0 - aFade) * 1.8) * uScale / -mv.z; gl_Position = projectionMatrix * mv; }`,
+      fragmentShader: `varying float vF;
+        void main(){ float d = length(gl_PointCoord - 0.5); if (d > 0.5) discard;
+          float core = smoothstep(0.5, 0.0, d);
+          vec3 col = mix(vec3(0.84, 0.9, 0.97), vec3(1.0), core);
+          gl_FragColor = vec4(col, core * core * vF * 0.6); }`,
+    }),
   );
   G.spray.frustumCulled = false;
   grp.add(G.spray);
+
+  // 滑行痕跡：雙板兩條、單板一條，轉彎或煞車時刮得比較寬
+  const TN = (G.trackN = lowPower ? 320 : 700);
+  G.trackI = 0;
+  G.trackLast = null;
+  G.trackP = new Float32Array(TN * 36);
+  const tg = new THREE.BufferGeometry();
+  tg.setAttribute("position", new THREE.BufferAttribute(G.trackP, 3));
+  G.track = new THREE.Mesh(
+    tg,
+    new THREE.MeshBasicMaterial({ color: "#8ea4c0", transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }),
+  );
+  G.track.frustumCulled = false;
+  grp.add(G.track);
 
   G.group = grp;
   world.scene.add(grp);
@@ -690,7 +734,7 @@ function stepSki(dt) {
     a -= 0.29 + Math.abs(G.ang) * 0.11 * G.v;
     if (input.brake) a -= 7.5;
     else if (G.push > 0) a += 3; // 起步撐杖推進
-    const over = Math.abs(G.d) - r.halfW;
+    const over = Math.abs(G.d) - r.wAt(G.s);
     if (over > 0) a -= (1.6 + over * 0.4) * B.powder; // 衝出壓雪區，深雪拖慢
   }
   G.v = Math.max(input.brake && !G.air ? 0 : 4.5, G.v + a * dt);
@@ -736,8 +780,8 @@ function stepSki(dt) {
   const s0 = G.s;
   G.s += G.v * Math.cos(G.ang) * dt;
   G.d = Math.max(
-    -r.halfW - 9,
-    Math.min(r.halfW + 9, G.d + G.v * Math.sin(G.ang) * dt),
+    -r.wAt(G.s) - 9,
+    Math.min(r.wAt(G.s) + 9, G.d + G.v * Math.sin(G.ang) * dt),
   );
   G.max = Math.max(G.max, G.v);
 
@@ -755,40 +799,90 @@ function stepSki(dt) {
     } else g.mats.forEach((m) => m.color.set("#8d99a6"));
   }
 
-  // 雪花飛濺
-  const emit = !G.air && G.v > 4 && (Math.abs(G.ang) > 0.25 || input.brake) ? 3 : 0;
-  const pos = skierPos(tA);
-  for (let i = 0; i < emit; i++) {
-    const k = G.sprayI++ % G.sprayN;
-    G.sprayP.set(
-      [
-        pos.x + (Math.random() - 0.5),
-        pos.y + 0.2,
-        pos.z + (Math.random() - 0.5),
-      ],
-      k * 3,
-    );
-    const side = Math.sign(G.ang) || (Math.random() < 0.5 ? 1 : -1);
-    G.sprayV.set(
-      [
-        (P.tz * side + (Math.random() - 0.5)) * 4,
-        2 + Math.random() * 3,
-        (-P.tx * side + (Math.random() - 0.5)) * 4,
-        0.7,
-      ],
-      k * 4,
-    );
+  // 雪霧與痕跡
+  const pos = skierPos(tA),
+    ca = Math.cos(G.ang),
+    sa = Math.sin(G.ang),
+    hx = P.tx * ca - P.tz * sa,
+    hz = P.tz * ca + P.tx * sa, // 行進方向
+    nx = -hz,
+    nz = hx, // 行進方向的右側
+    grounded = !G.air && G.y === 0;
+  const edge = Math.min(1, Math.abs(G.ang) / 0.7) * Math.min(1.3, G.v / 13),
+    stop = input.brake ? Math.min(1.5, G.v / 7) : 0,
+    deep = Math.abs(G.d) > r.wAt(G.s) ? Math.min(1, G.v / 10) : 0;
+  if (grounded && G.v > 2) {
+    const out = -(Math.sign(G.ang) || 1); // 雪往彎道外側噴
+    G.sprayAcc += (edge * 240 + stop * 300 + deep * 120 + (G.v > 9 ? 22 : 0)) * dt * (lowPower ? 0.5 : 1);
+    while (G.sprayAcc >= 1) {
+      G.sprayAcc--;
+      const along = (Math.random() - 0.6) * 1.5,
+        power = edge + stop * 0.8 + deep * 0.5,
+        side = stop > edge || deep > edge ? (Math.random() < 0.5 ? 1 : -1) : out,
+        lat = (1.2 + Math.random() * 4.2) * (0.25 + power) * side,
+        fwd = G.v * (stop ? 0.55 : 0.28) * (0.6 + Math.random() * 0.7);
+      snow(
+        pos.x + hx * along + nx * side * 0.25,
+        pos.y + 0.08,
+        pos.z + hz * along + nz * side * 0.25,
+        hx * fwd + nx * lat + (Math.random() - 0.5) * 1.2,
+        (0.5 + Math.random() * 3.6) * (0.2 + power),
+        hz * fwd + nz * lat + (Math.random() - 0.5) * 1.2,
+        0.45 + Math.random() * 0.7,
+        0.14 + Math.random() * 0.28 * (0.5 + power),
+      );
+    }
   }
+  const airDrag = Math.exp(-2.4 * dt);
   for (let k = 0; k < G.sprayN; k++) {
-    if (G.sprayV[k * 4 + 3] <= 0) continue;
-    G.sprayV[k * 4 + 3] -= dt;
-    G.sprayV[k * 4 + 1] -= 9 * dt;
-    G.sprayP[k * 3] += G.sprayV[k * 4] * dt;
-    G.sprayP[k * 3 + 1] += G.sprayV[k * 4 + 1] * dt;
-    G.sprayP[k * 3 + 2] += G.sprayV[k * 4 + 2] * dt;
-    if (G.sprayV[k * 4 + 3] <= 0) G.sprayP[k * 3 + 1] = -9999;
+    if (G.sprayL[k * 2] <= 0) continue;
+    const life = (G.sprayL[k * 2] -= dt);
+    if (life <= 0) {
+      G.sprayP[k * 3 + 1] = -9999;
+      G.sprayF[k] = 0;
+      continue;
+    }
+    G.sprayV[k * 3] *= airDrag;
+    G.sprayV[k * 3 + 2] *= airDrag;
+    G.sprayV[k * 3 + 1] -= 7.5 * dt;
+    G.sprayP[k * 3] += G.sprayV[k * 3] * dt;
+    G.sprayP[k * 3 + 1] += G.sprayV[k * 3 + 1] * dt;
+    G.sprayP[k * 3 + 2] += G.sprayV[k * 3 + 2] * dt;
+    G.sprayF[k] = Math.min(1, (life / G.sprayL[k * 2 + 1]) * 1.6);
   }
-  G.spray.geometry.attributes.position.needsUpdate = true;
+  const sa3 = G.spray.geometry.attributes;
+  sa3.position.needsUpdate = sa3.aFade.needsUpdate = sa3.aSize.needsUpdate = true;
+
+  if (!grounded) G.trackLast = null;
+  else {
+    const skid = Math.min(1, Math.abs(G.ang) * 0.9 + (input.brake ? 0.8 : 0)),
+      ski = G.board.kind === "ski",
+      wid = (ski ? 0.12 : 0.3) + skid * (ski ? 0.2 : 0.55),
+      cur = [];
+    for (const off of ski ? [-0.2, 0.2] : [0, 0])
+      for (const e of [-0.5, 0.5]) {
+        const x = pos.x + nx * (off + e * wid),
+          z = pos.z + nz * (off + e * wid);
+        cur.push(x, world.surfaceAt(x, z) + 0.06, z);
+      }
+    const L = G.trackLast,
+      moved = L ? Math.hypot(cur[0] - L[0], cur[2] - L[2]) : 0;
+    if (!L || moved > 4) G.trackLast = cur;
+    else if (moved > 0.45) {
+      const o = (G.trackI++ % G.trackN) * 36;
+      for (let lane = 0; lane < 2; lane++) {
+        const a = lane * 6,
+          q = [0, 3, 6, 3, 9, 6]; // 兩個三角形：前一格左右、這一格左右
+        for (let v = 0; v < 6; v++) {
+          const src = q[v] < 6 ? L : cur,
+            b = a + (q[v] % 6);
+          G.trackP.set([src[b], src[b + 1], src[b + 2]], o + lane * 18 + v * 3);
+        }
+      }
+      G.track.geometry.attributes.position.needsUpdate = true;
+      G.trackLast = cur;
+    }
+  }
 
   placeSkier(dt, "ski");
   if (G.s >= r.L - 4) finish();
@@ -822,12 +916,23 @@ function popup(text) {
 }
 
 // 起跳與落地的一圈雪花
+// 丟出一顆雪霧粒子
+function snow(x, y, z, vx, vy, vz, life, size) {
+  const k = G.sprayI++ % G.sprayN;
+  G.sprayP.set([x, y, z], k * 3);
+  G.sprayV.set([vx, vy, vz], k * 3);
+  G.sprayL[k * 2] = G.sprayL[k * 2 + 1] = life;
+  G.sprayF[k] = 1;
+  G.sprayS[k] = size;
+}
+
+// 起跳、落地時向四周炸開的一圈雪
 function burst(n) {
   const pos = skierPos(tA);
-  for (let i = 0; i < n; i++) {
-    const k = G.sprayI++ % G.sprayN, a = Math.random() * 6.28;
-    G.sprayP.set([pos.x, pos.y + 0.2, pos.z], k * 3);
-    G.sprayV.set([Math.cos(a) * 4, 1.5 + Math.random() * 2.5, Math.sin(a) * 4, 0.6], k * 4);
+  for (let i = 0; i < n * 3; i++) {
+    const a = Math.random() * 6.28,
+      sp = 1.5 + Math.random() * 4.5;
+    snow(pos.x + Math.cos(a) * 0.4, pos.y + 0.1, pos.z + Math.sin(a) * 0.4, Math.cos(a) * sp, 0.6 + Math.random() * 3, Math.sin(a) * sp, 0.4 + Math.random() * 0.6, 0.2 + Math.random() * 0.35);
   }
 }
 

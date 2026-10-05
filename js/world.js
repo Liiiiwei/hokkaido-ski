@@ -29,7 +29,88 @@ function resample(pts, step) {
   return out;
 }
 
+// 三點估算彎道半徑（公尺）
+function bendRadius(p, i, k = 3) {
+  if (i < k || i > p.length - 1 - k - 1) return 1e6; // 頭尾點距不完整，不估
+  const a = p[Math.max(0, i - k)],
+    b = p[i],
+    c = p[Math.min(p.length - 1, i + k)];
+  const h1 = Math.atan2(b[1] - a[1], b[0] - a[0]),
+    h2 = Math.atan2(c[1] - b[1], c[0] - b[0]);
+  let dh = Math.abs(h2 - h1);
+  if (dh > Math.PI) dh = 2 * Math.PI - dh;
+  const len = (Math.hypot(b[0] - a[0], b[1] - a[1]) + Math.hypot(c[0] - b[0], c[1] - b[1])) / 2;
+  return dh > 1e-4 ? len / dh : 1e6;
+}
+
+// 把太急的彎修圓：髮夾彎的半徑比雪道還窄時，兩側邊線會折疊交叉
+function easeBends(r) {
+  if (r.eased) return;
+  r.eased = true;
+  const MIN_R = 34;
+  let p = r.pts.map((q) => [q[0], q[1]]);
+  const n = p.length;
+  let touched = false;
+  for (let it = 0; it < 400; it++) {
+    const hot = new Uint8Array(n);
+    let any = false;
+    for (let i = 2; i < n - 2; i++)
+      if (bendRadius(p, i) < MIN_R) {
+        any = true;
+        for (let j = Math.max(1, i - 4); j <= Math.min(n - 2, i + 4); j++) hot[j] = 1;
+      }
+    if (!any) break;
+    touched = true;
+    const q = p.map((v) => [v[0], v[1]]);
+    for (let i = 1; i < n - 1; i++)
+      if (hot[i]) {
+        q[i][0] = p[i][0] * 0.5 + (p[i - 1][0] + p[i + 1][0]) * 0.25;
+        q[i][1] = p[i][1] * 0.5 + (p[i - 1][1] + p[i + 1][1]) * 0.25;
+      }
+    p = q;
+  }
+  if (!touched) return;
+  // 修圓後點距不再均勻，重新等距取樣，坡度依比例對應回去
+  const out = resample(p, STEP),
+    g = out.map((_, i) => r.g[Math.min(r.g.length - 1, Math.round((i / (out.length - 1)) * (n - 1)))]);
+  r.pts = out;
+  r.g = g;
+}
+
+// 各點可用的半寬：彎道內側與路線彼此靠近的地方自動收窄
+function widths(pts, halfW) {
+  const n = pts.length,
+    w = new Float32Array(n).fill(halfW),
+    skip = Math.ceil(110 / STEP);
+  for (let i = 0; i < n; i++) {
+    w[i] = Math.min(w[i], bendRadius(pts, i) * 0.75);
+    for (let j = i + skip; j < n; j++) {
+      const d = Math.hypot(pts[i][0] - pts[j][0], pts[i][1] - pts[j][1]) / 2 - 2;
+      if (d < halfW) {
+        w[i] = Math.min(w[i], d);
+        w[j] = Math.min(w[j], d);
+      }
+    }
+  }
+  // 往前後擴散最小值再平均，寬度變化才不會突然
+  const m = new Float32Array(n),
+    o = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    let v = halfW;
+    for (let j = Math.max(0, i - 14); j <= Math.min(n - 1, i + 14); j++) v = Math.min(v, w[j]);
+    m[i] = Math.max(7, v);
+  }
+  for (let i = 0; i < n; i++) {
+    let v = 0,
+      c = 0;
+    for (let j = Math.max(0, i - 12); j <= Math.min(n - 1, i + 12); j++) (v += m[j]), c++;
+    o[i] = v / c;
+  }
+  return o;
+}
+
 export function buildWorld(data, { lowPower = false } = {}) {
+  data.runs.forEach(easeBends);
   const { gw, gh, cell } = data;
   const spanX = (gw - 1) * cell,
     spanZ = (gh - 1) * cell;
@@ -119,7 +200,14 @@ export function buildWorld(data, { lowPower = false } = {}) {
       n,
       L: (n - 1) * STEP,
       halfW: HALF_W[r.diff],
+      w: widths(r.pts, HALF_W[r.diff]),
       h: r.pts.map((p) => heightAt(p[0], p[1])),
+    };
+    // 沿路線距離 s 的可用半寬
+    run.wAt = (s) => {
+      const f = clamp(s / STEP, 0, n - 1.0001),
+        i = f | 0;
+      return run.w[i] + (run.w[i + 1] - run.w[i]) * (f - i);
     };
     // 沿路線距離 s 取位置與切線
     run.at = (s, out = {}) => {
