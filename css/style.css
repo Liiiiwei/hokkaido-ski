@@ -1024,3 +1024,25 @@ h1 { font-size: clamp(2.9rem, 8vw, 6.2rem); }
 .compare td { width: 38%; }
 .compare tbody tr:hover { background: #e8eef4; }
 .steps li { display: flex; flex-direction: column; }
+
+/* 手機版滑行畫面：數據收到上方、按鈕貼底，把畫面中間留給雪道 */
+@media (max-width: 760px), (max-height: 520px) {
+  .hud-profile { display: none; }
+  .hud-top { gap: 8px; padding-left: 12px; padding-right: 12px; }
+  .hud-time { font-size: 1.6rem; }
+  #mini { right: 12px; width: 104px; height: 104px; }
+  .hud-speed { left: 14px; top: calc(max(14px, env(safe-area-inset-top)) + 58px); bottom: auto; }
+  .hud-speed b { font-size: 3.4rem; }
+  .hud-speed span { font-size: 0.85rem; }
+  .hud-side { left: 14px; right: auto; top: calc(max(14px, env(safe-area-inset-top)) + 116px); bottom: auto; text-align: left; display: flex; gap: 14px; font-size: 0.8rem; line-height: 1.2; }
+  .hud-side > div:first-child { display: none; }
+  .hud-side span { display: block; margin: 0; font-size: 0.62rem; }
+  .hud-side b { font-size: 1.25rem; }
+  .touch { bottom: max(18px, env(safe-area-inset-bottom)); padding: 0 12px; }
+  .touch > div { gap: 10px; }
+  .touch button { width: 74px; height: 74px; }
+  .touch #tB { width: 66px; height: 66px; font-size: 0.9rem; }
+  #pop { top: 30%; }
+  #panel ul { scrollbar-width: none; }
+  #panel ul::-webkit-scrollbar { display: none; }
+}
