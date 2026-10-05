@@ -2,6 +2,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/OrbitControls.js";
 import { buildWorld, DIFF, STEP } from "./world.js";
+import { createSkier } from "./skier.js";
 import { FACTS, COMPARE_ROWS } from "./facts.js";
 
 const $ = (id) => document.getElementById(id);
@@ -277,6 +278,7 @@ function setMode(m) {
   const explore = m === "explore";
   controls.enabled = explore;
   world.mapLayer.visible = explore;
+  world.liftGroup.visible = m !== "count" && m !== "result"; // 特寫鏡頭不讓纜車支柱擋住
   if (hilite) {
     hilite.visible = explore || m === "fly";
     hilite.material.opacity = explore ? 0.92 : 0.3; // 飛覽時只留淡淡的路線提示
@@ -287,6 +289,7 @@ function setMode(m) {
   show("count", m === "count");
   if (explore) {
     camera.fov = 55;
+    camera.up.set(0, 1, 0);
     camera.updateProjectionMatrix();
   }
 }
@@ -304,33 +307,17 @@ function startFly() {
 }
 
 /* ---------- 滑行 ---------- */
-function makeSkier() {
-  const g = new THREE.Group();
-  const mat = (c) => new THREE.MeshLambertMaterial({ color: c });
-  const box = (w, h, d, c, x, y, z) => {
-    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(c));
-    m.position.set(x, y, z);
-    g.add(m);
-    return m;
-  };
-  box(0.13, 0.04, 1.9, "#1b2733", -0.2, 0.02, 0.15);
-  box(0.13, 0.04, 1.9, "#1b2733", 0.2, 0.02, 0.15);
-  box(0.2, 0.62, 0.26, "#22303f", -0.2, 0.36, -0.02);
-  box(0.2, 0.62, 0.26, "#22303f", 0.2, 0.36, -0.02);
-  const torso = box(0.62, 0.7, 0.36, "#ff5a1f", 0, 0.98, 0.1);
-  torso.rotation.x = 0.35;
-  const head = new THREE.Mesh(
-    new THREE.SphereGeometry(0.2, 10, 8),
-    mat("#f3f6f9"),
-  );
-  head.position.set(0, 1.48, 0.26);
-  g.add(head);
-  for (const x of [-0.42, 0.42]) {
-    const p = box(0.035, 1.1, 0.035, "#111", x, 0.6, -0.15);
-    p.rotation.x = -0.5;
-  }
-  g.scale.setScalar(1.25);
-  return g;
+let dotTex;
+function dotTexture() {
+  if (dotTex) return dotTex;
+  const c = document.createElement("canvas");
+  c.width = c.height = 32;
+  const g = c.getContext("2d"), grd = g.createRadialGradient(16, 16, 2, 16, 16, 16);
+  grd.addColorStop(0, "#fff");
+  grd.addColorStop(1, "rgba(255,255,255,0)");
+  g.fillStyle = grd;
+  g.fillRect(0, 0, 32, 32);
+  return (dotTex = new THREE.CanvasTexture(c));
 }
 
 function clearGame() {
@@ -352,8 +339,10 @@ function startSki() {
   G.hits = 0;
   G.cd = 3.2;
   G.snap = true;
-  G.skier = makeSkier();
-  grp.add(G.skier);
+  G.pitch = 0;
+  G.push = 0;
+  G.skier = createSkier();
+  grp.add(G.skier.group);
 
   // 旗門
   const gap = r.diff === 2 ? 85 : 110,
@@ -401,7 +390,7 @@ function startSki() {
     }
   grp.add(edge);
   // 終點
-  const e = r.at(r.L - 4),
+  const e = r.at(r.L - 16),
     fin = new THREE.Mesh(
       new THREE.PlaneGeometry(r.halfW * 2, 2.2),
       new THREE.MeshBasicMaterial({ color: "#ff5a1f", side: THREE.DoubleSide }),
@@ -428,13 +417,7 @@ function startSki() {
   sg.setAttribute("position", new THREE.BufferAttribute(G.sprayP, 3));
   G.spray = new THREE.Points(
     sg,
-    new THREE.PointsMaterial({
-      color: "#ffffff",
-      size: 0.5,
-      transparent: true,
-      opacity: 0.85,
-      depthWrite: false,
-    }),
+    new THREE.PointsMaterial({ color: "#ffffff", size: 0.42, map: dotTexture(), transparent: true, opacity: 0.9, depthWrite: false }),
   );
   G.spray.frustumCulled = false;
   grp.add(G.spray);
@@ -443,7 +426,7 @@ function startSki() {
   world.scene.add(grp);
   setupHud(r, false);
   setMode("count");
-  placeSkier(0);
+  placeSkier(0, "count");
 }
 
 function setupHud(r, fly) {
@@ -462,34 +445,67 @@ function skierPos(out) {
   return out;
 }
 
-function placeSkier(dt) {
+// cam：count 起跑前繞到正面、ski 跟在後方、result 終點歡呼
+function placeSkier(dt, cam = "ski") {
   const pos = skierPos(tA),
     c = Math.cos(G.ang),
     s = Math.sin(G.ang);
   const hx = P.tx * c - P.tz * s,
     hz = P.tz * c + P.tx * s; // 實際行進方向
   const ahead = world.heightAt(pos.x + hx * 3, pos.z + hz * 3);
-  G.skier.position.copy(pos);
-  G.skier.rotation.set(
-    Math.atan2(pos.y - ahead, 3),
-    Math.atan2(hx, hz),
-    G.ang * 0.55,
-    "YXZ",
-  );
+  const k = G.snap ? 1 : 1 - Math.exp(-dt * 10);
+  G.pitch += (Math.atan2(pos.y - ahead, 3) - G.pitch) * k;
+  const sk = G.skier.group;
+  sk.position.copy(pos);
+  sk.rotation.set(G.pitch, Math.atan2(hx, hz), 0, "YXZ");
+  G.skier.update(dt, {
+    phase: cam === "ski" ? "ski" : cam === "result" ? "cheer" : "idle",
+    steer: (input.right ? 1 : 0) - (input.left ? 1 : 0),
+    ang: G.ang,
+    v: G.v,
+    brake: input.brake,
+    tuck: input.tuck,
+    push: G.push,
+  });
+
   // 鏡頭跟在路線方向後方，轉彎時畫面才不會亂晃
   const bx = P.tx * 0.75 + hx * 0.25,
     bz = P.tz * 0.75 + hz * 0.25;
-  tB.set(pos.x - bx * 13, 0, pos.z - bz * 13);
-  tB.y = Math.max(pos.y + 5.2, world.heightAt(tB.x, tB.z) + 3.2);
-  tC.set(
-    pos.x + bx * 14,
-    world.heightAt(pos.x + bx * 14, pos.z + bz * 14) + 1.6,
-    pos.z + bz * 14,
-  );
-  follow(tB, tC, dt, 5);
-  const fov = 58 + Math.min(22, G.v * 0.7);
-  if (Math.abs(fov - camera.fov) > 0.2) {
-    camera.fov += (fov - camera.fov) * 0.08;
+  let fov = 58;
+  if (cam === "ski") {
+    tB.set(pos.x - bx * 13, 0, pos.z - bz * 13);
+    tB.y = Math.max(pos.y + 5.2, world.heightAt(tB.x, tB.z) + 3.2);
+    tC.set(
+      pos.x + bx * 14,
+      world.heightAt(pos.x + bx * 14, pos.z + bz * 14) + 1.6,
+      pos.z + bz * 14,
+    );
+    camera.up.set(-P.tz * G.ang * 0.09, 1, P.tx * G.ang * 0.09); // 轉彎時畫面微微傾斜
+    follow(tB, tC, dt, 5);
+    fov += Math.min(22, G.v * 0.7);
+  } else {
+    const front = cam === "result";
+    let u = front ? 1 : Math.min(1, Math.max(0, (G.cd - 0.5) / 2.7));
+    u = u * u * (3 - 2 * u);
+    const phi = front ? Math.PI + Math.sin(clock * 0.5) * 0.5 : Math.PI * 0.86 * u;
+    const dist = front ? 7 : 13 - 7 * u,
+      cp = Math.cos(phi),
+      sp = Math.sin(phi);
+    tB.set(pos.x + (-bx * cp - bz * sp) * dist, 0, pos.z + (bx * sp - bz * cp) * dist);
+    tB.y = Math.max(pos.y + 5.2 - 3 * u, world.heightAt(tB.x, tB.z) + 1.4);
+    tC.set(pos.x + bx * 14 * (1 - u), pos.y + 1.6, pos.z + bz * 14 * (1 - u));
+    if (front) {
+      // 把人物讓到成績面板旁邊
+      const vx = pos.x - tB.x, vz = pos.z - tB.z, l = Math.hypot(vx, vz) || 1;
+      if (camera.aspect > 1) { tC.x += (-vz / l) * 2.2; tC.z += (vx / l) * 2.2; }
+      else tC.y -= 1.3;
+    }
+    camera.up.set(0, 1, 0);
+    follow(tB, tC, dt, 6);
+    fov = 52;
+  }
+  if (Math.abs(fov - camera.fov) > 0.05) {
+    camera.fov += (fov - camera.fov) * (1 - Math.exp(-dt * 5));
     camera.updateProjectionMatrix();
   }
 }
@@ -506,6 +522,7 @@ function follow(pos, target, dt, rate) {
 function stepSki(dt) {
   const r = G.run;
   G.t += dt;
+  G.push = Math.max(0, G.push - dt);
   const steer = (input.right ? 1 : 0) - (input.left ? 1 : 0);
   G.ang += (steer * 0.82 - G.ang) * Math.min(1, dt * 3.4);
   r.at(G.s, P);
@@ -573,7 +590,7 @@ function stepSki(dt) {
   }
   G.spray.geometry.attributes.position.needsUpdate = true;
 
-  placeSkier(dt);
+  placeSkier(dt, "ski");
   if (G.s >= r.L - 4) finish();
 }
 
@@ -621,6 +638,8 @@ function finish() {
   ]
     .map((s) => `<div><dt>${s[0]}</dt><dd>${s[1]}</dd></div>`)
     .join("");
+  G.v = 0;
+  G.ang = 0;
   setMode("result");
 }
 
@@ -675,16 +694,19 @@ function loop(now) {
   } else if (mode === "count") {
     G.cd -= dt;
     $("count").textContent = G.cd > 0.2 ? Math.ceil(G.cd - 0.2) : "出發";
-    placeSkier(dt);
+    placeSkier(dt, "count");
     updateHud();
     if (G.cd <= -0.5) {
       G.v = 3;
+      G.push = 1.4;
       G.t = 0;
       setMode("ski");
     }
   } else if (mode === "ski") {
     stepSki(dt);
     if (mode === "ski") updateHud();
+  } else if (mode === "result" && G.group) {
+    placeSkier(dt, "result");
   }
   world.update(clock, camera);
   renderer.render(world.scene, camera);

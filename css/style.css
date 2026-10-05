@@ -851,6 +851,10 @@ footer {
 #loading {
   background: var(--ink);
 }
+/* 成績面板靠邊，讓出位置給終點歡呼的小人 */
+#result { background: linear-gradient(to left, #0e1b2cd9, #0e1b2c00 62%); backdrop-filter: none; place-items: center end; padding-right: clamp(20px, 6vw, 96px); }
+@media (max-aspect-ratio: 1/1) { #result { background: linear-gradient(to top, #0e1b2ce6 40%, #0e1b2c00 75%); place-items: end center; padding: 20px 16px max(20px, env(safe-area-inset-bottom)); } }
+#app[data-mode="result"] #hud { display: none; }
 .sheet-in {
   width: min(440px, 100%);
   background: var(--snow);

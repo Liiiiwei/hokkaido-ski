@@ -450,6 +450,7 @@ export function buildWorld(data, { lowPower = false } = {}) {
     heightAt,
     ribbon,
     mapLayer,
+    liftGroup,
     center,
     radius,
     viewDir,
