@@ -76,7 +76,7 @@
           <li><b>挑雪道與雪板</b>點清單或地圖上的名稱，看長度、落差與坡度剖面。</li>
           <li><b>飛覽</b>鏡頭沿雪道從頭飛到尾，先認路。</li>
           <li>
-            <b>開滑</b>方向鍵或 WASD：左右轉彎、下煞車、上蹲低加速。空白鍵跳躍，騰空時再按一次做特技，同時按住上或下會變成空翻。手機用畫面上的按鈕。
+            <b>開滑</b>方向鍵或 WASD：左右轉彎、下煞車、上蹲低加速。空白鍵跳躍，騰空時再按一次做特技，同時按住上或下會變成空翻。途中會隨機出現雪球、狼和雪怪，畫面上方會先預警，看清楚來向再閃開；被撞到會扣體力，穿過旗門可以補回一點，體力歸零就結束。手機用畫面上的按鈕。
           </li>
         </ol>
       </section>
@@ -133,6 +133,8 @@
           <div class="hud-name" id="hName"></div>
           <div class="hud-time" id="hTime">0:00.0</div>
         </div>
+        <div class="hud-hp"><span>體力</span><div><i id="hHp"></i></div><b id="hHpNum">100</b></div>
+        <div id="warn" hidden></div>
         <canvas id="mini" width="360" height="360"></canvas>
         <div class="hud-speed"><b id="hSpeed">0</b><span id="hUnit">km/h</span></div>
         <div class="hud-side">
@@ -160,7 +162,7 @@
 
       <div id="result" class="sheet" hidden>
         <div class="sheet-in">
-          <p class="eyebrow">抵達終點</p>
+          <p class="eyebrow" id="rEyebrow">抵達終點</p>
           <h3 id="rName"></h3>
           <div class="big" id="rTime"></div>
           <p class="best" id="rBest"></p>

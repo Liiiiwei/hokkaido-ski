@@ -1046,3 +1046,23 @@ h1 { font-size: clamp(2.9rem, 8vw, 6.2rem); }
   #panel ul { scrollbar-width: none; }
   #panel ul::-webkit-scrollbar { display: none; }
 }
+
+/* 體力條、預警與受傷閃紅 */
+.hud-hp { position: absolute; left: 50%; top: calc(max(14px, env(safe-area-inset-top)) + 8px); transform: translateX(-50%); display: flex; align-items: center; gap: 8px; font: 700 0.78rem var(--sans); letter-spacing: 0.12em; }
+.hud-hp div { width: clamp(120px, 20vw, 240px); height: 12px; border-radius: 6px; background: #0e1b2c88; border: 1.5px solid #ffffffcc; overflow: hidden; }
+.hud-hp i { display: block; height: 100%; width: 100%; background: #2fd27a; transition: width 0.25s, background 0.25s; }
+.hud-hp b { font: 700 1.1rem var(--num); min-width: 2ch; }
+#hud.fly .hud-hp, #hud.fly #warn { display: none; }
+#warn { position: absolute; left: 50%; top: calc(max(14px, env(safe-area-inset-top)) + 44px); transform: translateX(-50%); display: flex; align-items: center; gap: 10px; padding: 8px 14px 8px 8px; border-radius: 8px; background: #e0263ce6; color: #fff; font: 700 1rem var(--sans); white-space: nowrap; text-shadow: none; box-shadow: 0 6px 24px #0e1b2c55; animation: warnIn 0.25s both; }
+#warn[hidden] { display: none; }
+#warn b { background: #fff; color: #e0263c; border-radius: 5px; padding: 2px 8px; font-size: 0.82rem; letter-spacing: 0.1em; }
+#warn em { font: 700 1.1rem var(--num); font-style: normal; opacity: 0.9; }
+@keyframes warnIn { from { opacity: 0; transform: translate(-50%, -8px); } }
+#hud.hurt::after { content: ""; position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 120px 40px #e0263c; animation: hurt 0.6s both; }
+@keyframes hurt { from { opacity: 0.85; } to { opacity: 0; } }
+@media (max-width: 760px), (max-height: 520px) {
+  .hud-hp { left: 14px; right: 130px; top: calc(max(14px, env(safe-area-inset-top)) + 160px); transform: none; font-size: 0.66rem; }
+  .hud-hp div { flex: 1; width: auto; max-width: 150px; height: 10px; }
+  #warn { top: calc(max(14px, env(safe-area-inset-top)) + 190px); font-size: 0.86rem; padding: 6px 10px 6px 6px; }
+}
+@media (max-height: 520px) { #warn { top: calc(max(14px, env(safe-area-inset-top)) + 8px); } }

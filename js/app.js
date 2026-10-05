@@ -2,6 +2,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/OrbitControls.js";
 import { buildWorld, DIFF, STEP } from "./world.js";
+import { createHazards } from "./hazards.js";
 import { createSkier, BOARDS } from "./skier.js";
 import { FACTS, COMPARE_ROWS } from "./facts.js";
 
@@ -324,6 +325,12 @@ function drawMini() {
       const q = r.at(kk.s, {});
       dot(q.x, q.z, 7, "#ffb400");
     }
+    for (const h of G.haz.list) {
+      if (h.state === "idle" || h.state === "gone" || h.s < G.s) continue;
+      const hx = h.p.x - h.p.tz * h.d, hz = h.p.z + h.p.tx * h.d;
+      dot(hx, hz, 10, "#ffffff");
+      dot(hx, hz, 7, "#e0263c");
+    }
     for (const gt of G.gates) {
       const q = r.at(gt.s, {}), c = gt.hit ? "#2fd27a" : gt.done ? "#8d99a6" : gt.mats[1].color.getStyle();
       for (const o of [-GATE_W, GATE_W]) dot(q.x - q.tz * (gt.d + o), q.z + q.tx * (gt.d + o), 4.5, c);
@@ -409,6 +416,8 @@ function dotTexture() {
 function clearGame() {
   if (G.group && world) world.scene.remove(G.group);
   G.group = null;
+  showWarn(null);
+  $("hud").classList.remove("hurt");
 }
 
 // 地面上的一點
@@ -458,6 +467,11 @@ function startSki() {
   G.snap = true;
   G.pitch = 0;
   G.push = 0;
+  G.hp = 100;
+  G.hpShown = -1;
+  G.failed = false;
+  G.inv = 0;
+  G.dodged = 0;
   G.skier = createSkier(board);
   grp.add(G.skier.group);
 
@@ -562,6 +576,8 @@ function startSki() {
     grp.add(k);
     G.kickers.push({ s, d: 0, len: KL, w: KW, h: KH });
   }
+  // 隨機關卡：雪球、狼、雪怪
+  G.haz = createHazards(world, r, G.kickers, G.gates, grp);
   // 終點
   const e = r.at(r.L - 16),
     ends = [-1, 1].map((side) =>
@@ -655,7 +671,7 @@ function placeSkier(dt, cam = "ski") {
   sk.position.copy(pos);
   sk.rotation.set(G.pitch, Math.atan2(hx, hz), 0, "YXZ");
   G.skier.update(dt, {
-    phase: cam === "ski" ? "ski" : cam === "result" ? "cheer" : "idle",
+    phase: cam === "ski" ? "ski" : cam === "result" && !G.failed ? "cheer" : "idle",
     steer: (input.right ? 1 : 0) - (input.left ? 1 : 0),
     ang: G.ang,
     v: G.v,
@@ -790,6 +806,7 @@ function stepSki(dt) {
     g.done = true;
     if (g.s >= s0 - 30 && Math.abs(G.d - g.d) < GATE_W + 0.6) {
       G.hits++;
+      G.hp = Math.min(100, G.hp + 5);
       g.hit = true;
       g.mats.forEach((m) => m.color.set("#2fd27a"));
       popup(`通過旗門 ${G.hits}/${G.gates.length}`);
@@ -798,6 +815,29 @@ function stepSki(dt) {
       $("hGate").parentElement.classList.add("pop");
     } else g.mats.forEach((m) => m.color.set("#8d99a6"));
   }
+
+  // 隨機關卡：預警與碰撞
+  G.inv = Math.max(0, G.inv - dt);
+  const danger = G.haz.update(dt, G.s, G.d, G.y, clock);
+  showWarn(danger.warn);
+  if (danger.hit && G.inv <= 0) {
+    const h = danger.hit;
+    G.hp = Math.max(0, G.hp - h.dmg);
+    G.inv = 1.6;
+    G.v *= 0.35;
+    burst(16);
+    popup(`撞到${h.name} −${h.dmg}`);
+    $("hud").classList.remove("hurt");
+    void $("hud").offsetWidth;
+    $("hud").classList.add("hurt");
+    if (G.hp <= 0) {
+      G.skier.group.visible = true;
+      h.mesh.visible = h.sign.visible = false; // 結算鏡頭會繞到正面，別讓牠擋住人物
+      showWarn(null);
+      return finish(true);
+    }
+  }
+  G.skier.group.visible = G.inv <= 0 || Math.floor(G.inv * 12) % 2 === 0; // 受傷後短暫無敵，人物閃爍
 
   // 雪霧與痕跡
   const pos = skierPos(tA),
@@ -916,6 +956,24 @@ function popup(text) {
 }
 
 // 起跳與落地的一圈雪花
+// 畫面上方的預警：是什麼、從哪邊來、還有多遠
+let warnKey = "";
+function showWarn(h) {
+  const el = $("warn");
+  if (!h) {
+    if (warnKey) (el.hidden = true), (warnKey = "");
+    return;
+  }
+  const dist = Math.max(0, Math.round((h.s - G.s) / 10) * 10),
+    from = h.side < 0 ? "左" : "右",
+    text = h.type === "ball" ? `雪球從${from}邊滾過來` : h.type === "wolf" ? `狼從${from}邊衝出來，往${h.side < 0 ? "右" : "左"}閃` : "前方有雪怪，繞開牠",
+    k = `${h.type}${h.s}${dist}`;
+  if (k === warnKey) return;
+  warnKey = k;
+  el.hidden = false;
+  el.innerHTML = `<b>注意</b>${text}<em>${dist} m</em>`;
+}
+
 // 丟出一顆雪霧粒子
 function snow(x, y, z, vx, vy, vz, life, size) {
   const k = G.sprayI++ % G.sprayN;
@@ -950,14 +1008,39 @@ function updateHud() {
     return;
   }
   $("hSpeed").textContent = Math.round(G.v * 3.6);
+  if (G.hp !== G.hpShown) {
+    G.hpShown = G.hp;
+    $("hHp").style.width = `${G.hp}%`;
+    $("hHp").style.background = G.hp > 60 ? "#2fd27a" : G.hp > 30 ? "#ffb400" : "#e0263c";
+    $("hHpNum").textContent = G.hp;
+  }
   $("hTime").textContent = fmtTime(G.t);
   $("hGate").textContent = `${G.hits}/${G.gates.length}`;
   $("hTrick").textContent = G.score.toLocaleString();
 }
 
-function finish() {
+function finish(failed = false) {
   const r = G.run,
     id = `best:${key}:${r.id}`;
+  $("rEyebrow").textContent = failed ? "體力耗盡" : "抵達終點";
+  if (failed) {
+    $("rName").innerHTML = `${diffTag(r.diff)}　${r.zh}`;
+    $("rTime").textContent = "未完成";
+    $("rBest").textContent = `滑了 ${Math.round(G.s).toLocaleString()} m，離終點還有 ${Math.max(0, Math.round(r.L - G.s)).toLocaleString()} m`;
+    $("rStats").innerHTML = [
+      ["最高時速", `${Math.round(G.max * 3.6)} km/h`],
+      ["滑行時間", fmtTime(G.t)],
+      ["旗門", `${G.hits}/${G.gates.length}`],
+      ["特技分", G.score.toLocaleString()],
+    ]
+      .map((s) => `<div><dt>${s[0]}</dt><dd>${s[1]}</dd></div>`)
+      .join("");
+    G.v = 0;
+    G.ang = 0;
+    G.failed = true;
+    return setMode("result");
+  }
+  G.failed = false;
   let best = null;
   try {
     best = parseFloat(localStorage.getItem(id));
@@ -979,6 +1062,7 @@ function finish() {
     ["平均時速", `${Math.round((r.L / G.t) * 3.6)} km/h`],
     ["旗門", `${G.hits}/${G.gates.length}`],
     ["特技分", G.score.toLocaleString()],
+    ["剩餘體力", `${G.hp}`],
   ]
     .map((s) => `<div><dt>${s[0]}</dt><dd>${s[1]}</dd></div>`)
     .join("");
