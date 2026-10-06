@@ -5,6 +5,16 @@ import { buildWorld, DIFF, STEP } from "./world.js";
 import { createHazards } from "./hazards.js";
 import { createSkier, BOARDS } from "./skier.js";
 import { FACTS, COMPARE_ROWS } from "./facts.js";
+import { POINTS, comboMult, parTime, finalScore, grade } from "./score.js";
+import {
+  initAudio,
+  updateAudio,
+  quietAudio,
+  suspendAudio,
+  setMuted,
+  isMuted,
+  sfx,
+} from "./audio.js";
 
 const $ = (id) => document.getElementById(id);
 const KEYS = ["teine", "kokusai"];
@@ -12,6 +22,21 @@ const lowPower = matchMedia("(pointer: coarse)").matches;
 const fmtTime = (t) =>
   `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, "0")}`;
 const diffTag = (d) => `<i class="d d${d}"></i>${DIFF[d].name}`;
+const buzz = (ms) => navigator.vibrate?.(ms); // 手機震動回饋
+const store = {
+  get(k) {
+    try {
+      return localStorage.getItem(k);
+    } catch {
+      return null;
+    }
+  },
+  set(k, v) {
+    try {
+      localStorage.setItem(k, v);
+    } catch {}
+  },
+};
 
 /* ---------- 首頁 ---------- */
 $("tickets").innerHTML = KEYS.map((k, i) => {
@@ -71,7 +96,8 @@ $("resorts").innerHTML = KEYS.map((k, i) => {
 const flakes = document.querySelector(".flakes");
 // 近的雪花大、快、略糊；遠的小、慢、淡
 for (let i = 0; i < 64; i++) {
-  const s = document.createElement("i"), near = Math.random() ** 2;
+  const s = document.createElement("i"),
+    near = Math.random() ** 2;
   s.style.cssText = `left:${Math.random() * 100}%;--s:${(1.8 + near * 5.5).toFixed(1)}px;--o:${(0.35 + near * 0.55).toFixed(2)};--b:${near > 0.7 ? 1 : 0}px;--t:${(20 - near * 11 + Math.random() * 3).toFixed(1)}s;--d:${(-Math.random() * 22).toFixed(1)}s;--x:${(8 + Math.random() * 26).toFixed(0)}px;--w:${(2.4 + Math.random() * 3).toFixed(1)}s`;
   flakes.appendChild(s);
 }
@@ -86,6 +112,9 @@ let renderer,
   last = 0,
   clock = 0;
 let mode = "explore"; // explore | fly | count | ski | result
+let paused = false;
+const STEP_T = 1 / 120; // 物理固定步長，掉幀時手感不變
+const R = { s: 0, d: 0, y: 0, ang: 0 }; // 畫面用的狀態：兩個物理步之間內插
 let sel = null,
   hilite = null,
   labels = [],
@@ -113,6 +142,8 @@ function initGL() {
   renderer.setPixelRatio(Math.min(devicePixelRatio, lowPower ? 1.5 : 2));
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.08;
+  renderer.shadowMap.enabled = !lowPower;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   camera = new THREE.PerspectiveCamera(55, 1, 2, 40000);
   controls = new OrbitControls(camera, $("gl"));
   controls.enableDamping = true;
@@ -183,6 +214,8 @@ function leave() {
   cancelAnimationFrame(raf);
   raf = 0;
   clearGame();
+  setPaused(false);
+  quietAudio();
   show("app", false);
   document.body.classList.remove("in-app");
 }
@@ -227,6 +260,13 @@ function buildList() {
   });
 }
 
+// 每條雪道的個人紀錄：最快時間、最高分與當時的評級
+function readBest(run) {
+  const time = parseFloat(store.get(`best:${key}:${run.id}`)) || 0,
+    [score, g] = (store.get(`score:${key}:${run.id}`) || "").split("|");
+  return { time, score: parseInt(score) || 0, grade: g || "" };
+}
+
 function profilePath(run, w, h) {
   const lo = run.bot,
     hi = Math.max(...run.h),
@@ -266,6 +306,12 @@ function select(i) {
     .map((s) => `<div><dt>${s[0]}</dt><dd>${s[1]}</dd></div>`)
     .join("");
   $("cProfile").innerHTML = profilePath(sel, 300, 70);
+  const b = readBest(sel);
+  $("cBest").hidden = !(b.score > 0 || b.time > 0);
+  $("cBest").innerHTML =
+    `個人最佳${b.grade ? `<b class="g${b.grade}">${b.grade}</b>` : ""}` +
+    `${b.score > 0 ? `<span>${b.score.toLocaleString()} 分</span>` : ""}` +
+    `${b.time > 0 ? `<span>${fmtTime(b.time)}</span>` : ""}`;
   const m = sel.at(sel.L / 2);
   controls.autoRotate = false;
   frame(
@@ -280,10 +326,16 @@ const GATE_W = 6.5; // 旗門半寬（公尺）
 // 以自己為中心、前進方向朝上，看得到前方約 300 公尺的彎道、旗門與跳台
 const MINI_SPAN = 440;
 function drawMini() {
-  const cv = $("mini"), g = cv.getContext("2d"), r = G.run, size = cv.width, k = size / MINI_SPAN;
+  const cv = $("mini"),
+    g = cv.getContext("2d"),
+    r = G.run,
+    size = cv.width,
+    k = size / MINI_SPAN;
   const fly = mode === "fly";
-  const p = r.at(G.s, {}), d = fly ? 0 : G.d;
-  const px = p.x - p.tz * d, pz = p.z + p.tx * d;
+  const p = r.at(G.s, {}),
+    d = fly ? 0 : G.d;
+  const px = p.x - p.tz * d,
+    pz = p.z + p.tx * d;
   g.clearRect(0, 0, size, size);
   g.save();
   g.translate(size / 2, size * 0.68);
@@ -302,7 +354,10 @@ function drawMini() {
   // 本雪道依各段實際寬度畫，只畫小地圖範圍內的部分
   const i0 = Math.max(0, Math.floor((G.s - 260) / STEP)),
     i1 = Math.min(r.n - 1, Math.ceil((G.s + 420) / STEP));
-  for (const [extra, c] of [[12, DIFF[r.diff].color], [0, "#ffffff"]]) {
+  for (const [extra, c] of [
+    [12, DIFF[r.diff].color],
+    [0, "#ffffff"],
+  ]) {
     g.strokeStyle = c;
     for (let i = i0; i < i1; i++) {
       g.beginPath();
@@ -327,13 +382,20 @@ function drawMini() {
     }
     for (const h of G.haz.list) {
       if (h.state === "idle" || h.state === "gone" || h.s < G.s) continue;
-      const hx = h.p.x - h.p.tz * h.d, hz = h.p.z + h.p.tx * h.d;
+      const hx = h.p.x - h.p.tz * h.d,
+        hz = h.p.z + h.p.tx * h.d;
       dot(hx, hz, 10, "#ffffff");
       dot(hx, hz, 7, "#e0263c");
     }
     for (const gt of G.gates) {
-      const q = r.at(gt.s, {}), c = gt.hit ? "#2fd27a" : gt.done ? "#8d99a6" : gt.mats[1].color.getStyle();
-      for (const o of [-GATE_W, GATE_W]) dot(q.x - q.tz * (gt.d + o), q.z + q.tx * (gt.d + o), 4.5, c);
+      const q = r.at(gt.s, {}),
+        c = gt.hit
+          ? "#2fd27a"
+          : gt.done
+            ? "#8d99a6"
+            : gt.mats[1].color.getStyle();
+      for (const o of [-GATE_W, GATE_W])
+        dot(q.x - q.tz * (gt.d + o), q.z + q.tx * (gt.d + o), 4.5, c);
     }
   }
   g.restore();
@@ -342,7 +404,10 @@ function drawMini() {
   g.translate(size / 2, size * 0.68);
   g.rotate(fly ? 0 : G.ang);
   g.beginPath();
-  g.moveTo(0, -17); g.lineTo(11, 11); g.lineTo(0, 5); g.lineTo(-11, 11);
+  g.moveTo(0, -17);
+  g.lineTo(11, 11);
+  g.lineTo(0, 5);
+  g.lineTo(-11, 11);
   g.closePath();
   g.lineWidth = 4;
   g.strokeStyle = "#fff";
@@ -359,7 +424,8 @@ try {
 } catch {}
 function renderGear() {
   $("gear").innerHTML = BOARDS.map(
-    (b) => `<button data-board="${b.id}" class="${b === board ? "on" : ""}" style="--c:${b.color}"><i></i>${b.name}</button>`,
+    (b) =>
+      `<button data-board="${b.id}" class="${b === board ? "on" : ""}" style="--c:${b.color}"><i></i>${b.name}</button>`,
   ).join("");
   $("gearDesc").textContent = board.desc;
 }
@@ -368,6 +434,7 @@ renderGear();
 function setMode(m) {
   mode = m;
   $("app").dataset.mode = m;
+  setPaused(false);
   const explore = m === "explore";
   controls.enabled = explore;
   world.mapLayer.visible = explore;
@@ -380,11 +447,28 @@ function setMode(m) {
   show("hud", m !== "explore");
   show("result", m === "result");
   show("count", m === "count");
+  if (m !== "ski") {
+    quietAudio();
+    $("speedfx").style.opacity = 0;
+  }
   if (explore) {
     camera.fov = 55;
     camera.up.set(0, 1, 0);
     camera.updateProjectionMatrix();
   }
+}
+
+// 暫停：只有倒數與滑行中可以停
+function setPaused(on) {
+  if (on === paused || (on && mode !== "ski" && mode !== "count")) return;
+  paused = on;
+  show("pause", on);
+  suspendAudio(on);
+  if (on) releaseInput();
+}
+
+function renderMute() {
+  $("btnMute").textContent = `音效：${isMuted() ? "關" : "開"}`;
 }
 
 /* ---------- 飛覽 ---------- */
@@ -393,6 +477,7 @@ function startFly() {
   G.run = sel;
   G.s = 0;
   G.t = 0;
+  G.shake = 0;
   G.flySpeed = Math.max(28, sel.L / 50);
   setupHud(sel, true);
   setMode("fly");
@@ -400,52 +485,155 @@ function startFly() {
 }
 
 /* ---------- 滑行 ---------- */
-let dotTex;
-function dotTexture() {
-  if (dotTex) return dotTex;
-  const c = document.createElement("canvas");
-  c.width = c.height = 32;
-  const g = c.getContext("2d"), grd = g.createRadialGradient(16, 16, 2, 16, 16, 16);
-  grd.addColorStop(0, "#fff");
-  grd.addColorStop(1, "rgba(255,255,255,0)");
-  g.fillStyle = grd;
-  g.fillRect(0, 0, 32, 32);
-  return (dotTex = new THREE.CanvasTexture(c));
-}
-
 function clearGame() {
   if (G.group && world) world.scene.remove(G.group);
   G.group = null;
   showWarn(null);
   $("hud").classList.remove("hurt");
+  $("tip").classList.remove("show");
 }
 
 // 地面上的一點
 function ground(x, z) {
   return { x, y: world.heightAt(x, z), z };
 }
-// 立在地面的桿子：往下多埋一截，斜坡上不會懸空
+// 立在地面的桿子：往下多埋一截，斜坡上不會懸空；桿頂加一顆圓頭
+const capGeo = new THREE.SphereGeometry(1, 10, 8);
 function post(f, h, rad, mat) {
-  const m = new THREE.Mesh(new THREE.CylinderGeometry(rad, rad, h + 3, 6), mat);
+  const m = new THREE.Mesh(
+    new THREE.CylinderGeometry(rad, rad * 1.25, h + 3, 8),
+    mat,
+  );
   m.position.set(f.x, f.y + (h - 3) / 2, f.z);
+  m.castShadow = true;
+  const cap = new THREE.Mesh(capGeo, mat);
+  cap.scale.setScalar(rad * 1.5);
+  cap.position.y = (h + 3) / 2;
+  m.add(cap);
   return m;
 }
-// 橫幅：四個角接在兩根桿頂，地面一高一低也不會脫節
-function spanBanner(a, b, top, h, mat) {
+// 橫幅：四個角接在兩根桿頂，地面一高一低也不會脫節。
+// 從「a 在左、b 在右」那一側看是正面，圖樣橫向重複 rep 次
+function spanBanner(a, b, top, h, mat, rep = 1) {
   const g = new THREE.BufferGeometry();
   g.setAttribute(
     "position",
     new THREE.Float32BufferAttribute(
-      [a.x, a.y + top, a.z, b.x, b.y + top, b.z, a.x, a.y + top - h, a.z, b.x, b.y + top - h, b.z],
+      [
+        a.x,
+        a.y + top,
+        a.z,
+        b.x,
+        b.y + top,
+        b.z,
+        a.x,
+        a.y + top - h,
+        a.z,
+        b.x,
+        b.y + top - h,
+        b.z,
+      ],
       3,
     ),
   );
+  g.setAttribute(
+    "uv",
+    new THREE.Float32BufferAttribute([0, 1, rep, 1, 0, 0, rep, 0], 2),
+  );
   g.setIndex([0, 2, 1, 1, 2, 3]);
-  return new THREE.Mesh(g, mat);
+  const m = new THREE.Mesh(g, mat);
+  m.castShadow = true;
+  return m;
 }
+// 有字的橫幅正反面各掛一張，從哪一側看字都不會反
+function signBanner(grp, a, b, top, h, tex, rep) {
+  const mat = new THREE.MeshBasicMaterial({ map: tex });
+  grp.add(
+    spanBanner(a, b, top, h, mat, rep),
+    spanBanner(b, a, top, h, mat, rep),
+  );
+}
+
+// 旗幟與標示用的圖樣，畫一次之後共用
+const texCache = {};
+function signTexture(kind) {
+  if (texCache[kind]) return texCache[kind];
+  const cv = document.createElement("canvas"),
+    g = cv.getContext("2d");
+  if (kind === "gate") {
+    // 白底加一排朝下的箭頭，再由旗門的顏色染色
+    cv.width = 512;
+    cv.height = 64;
+    g.fillStyle = "#fff";
+    g.fillRect(0, 0, 512, 64);
+    g.fillStyle = "#b4b4b4";
+    g.fillRect(0, 0, 512, 6);
+    g.fillRect(0, 58, 512, 6);
+    for (let x = 0; x < 512; x += 64) {
+      g.beginPath();
+      [
+        [12, 16],
+        [32, 50],
+        [52, 16],
+        [42, 16],
+        [32, 33],
+        [22, 16],
+      ].forEach(([px, py], i) => g[i ? "lineTo" : "moveTo"](x + px, py));
+      g.fill();
+    }
+  } else if (kind === "checker") {
+    cv.width = cv.height = 64;
+    g.fillStyle = "#fff";
+    g.fillRect(0, 0, 64, 64);
+    g.fillStyle = "#15181c";
+    g.fillRect(0, 0, 32, 32);
+    g.fillRect(32, 32, 32, 32);
+  } else {
+    // 起點與終點：左邊一塊格紋，右邊是字
+    const finish = kind === "finish";
+    cv.width = 512;
+    cv.height = 128;
+    g.fillStyle = finish ? "#ff5a1f" : "#1f6feb";
+    g.fillRect(0, 0, 512, 128);
+    for (let i = 0; i < 4; i++)
+      for (let j = 0; j < 4; j++) {
+        g.fillStyle = (i + j) % 2 ? "#15181c" : "#fff";
+        g.fillRect(i * 32, j * 32, 32, 32);
+      }
+    g.fillStyle = "#fff";
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    g.font = '900 74px "Noto Sans TC", "PingFang TC", sans-serif';
+    g.fillText(finish ? "終點 FINISH" : "出發 START", 320, 68, 360);
+  }
+  const t = new THREE.CanvasTexture(cv);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.colorSpace = THREE.SRGBColorSpace;
+  if (kind === "checker") t.magFilter = THREE.NearestFilter;
+  else t.anisotropy = 8;
+  return (texCache[kind] = t);
+}
+
+// 第一次滑才出現的操作提示：[出現的秒數, 文字]
+const TIPS = (
+  lowPower
+    ? [
+        "按住 ◀ ▶ 轉彎，從旗門中間穿過去",
+        "按住「蹲」加速，「煞車」減速",
+        "按「跳」起跳，騰空時再按一次做特技",
+        "連續過旗門會疊高倍率，漏掉或被撞就歸零",
+      ]
+    : [
+        "← → 轉彎，從旗門中間穿過去",
+        "↑ 蹲低加速，↓ 煞車",
+        "空白鍵起跳，騰空時再按一次做特技",
+        "連續過旗門會疊高倍率，漏掉或被撞就歸零",
+      ]
+).map((text, i) => [0.6 + i * 5.5, text]);
 
 function startSki() {
   clearGame();
+  initAudio();
   const r = sel,
     grp = new THREE.Group();
   G.run = r;
@@ -463,7 +651,13 @@ function startSki() {
   G.onRamp = false;
   G.trick = null;
   G.score = 0;
+  G.pts = { gate: 0, trick: 0, dodge: 0 };
+  G.combo = 0;
+  G.comboShown = -1;
+  G.bestCombo = 0;
+  G.par = parTime(r.L, +r.avg || 10);
   G.cd = 3.2;
+  G.cdShown = "";
   G.snap = true;
   G.pitch = 0;
   G.push = 0;
@@ -472,7 +666,16 @@ function startSki() {
   G.failed = false;
   G.inv = 0;
   G.dodged = 0;
-  G.skier = createSkier(board);
+  G.acc = 0;
+  G.freeze = 0;
+  G.shake = 0;
+  G.impact = 0;
+  G.dip = 0;
+  G.dipV = 0;
+  G.warned = null;
+  G.res = null;
+  G.tipI = store.get("tips") ? TIPS.length : 0;
+  G.skier = createSkier(board, { blob: lowPower });
   grp.add(G.skier.group);
 
   // 旗門：兩根桿子加上方橫幅，從中間穿過就算通過
@@ -480,38 +683,51 @@ function startSki() {
   G.gates = [];
   for (let s = 90, i = 0; s < r.L - 70; s += gap, i++) {
     const p = r.at(s),
-      d = (i % 2 ? 1 : -1) * Math.max(0, Math.min(r.wAt(s) * 0.36, r.wAt(s) - GATE_W - 1)),
+      d =
+        (i % 2 ? 1 : -1) *
+        Math.max(0, Math.min(r.wAt(s) * 0.36, r.wAt(s) - GATE_W - 1)),
       col = i % 2 ? "#1f6feb" : "#e23b2e";
     const mats = [
       new THREE.MeshLambertMaterial({ color: col }),
-      new THREE.MeshBasicMaterial({ color: col, side: THREE.DoubleSide }),
+      new THREE.MeshBasicMaterial({
+        color: col,
+        map: signTexture("gate"),
+        side: THREE.DoubleSide,
+      }),
     ];
     const feet = [-GATE_W, GATE_W].map((o) =>
       ground(p.x - p.tz * (d + o), p.z + p.tx * (d + o)),
     );
-    for (const f of feet) grp.add(post(f, 4, 0.11, mats[0]));
-    grp.add(spanBanner(feet[0], feet[1], 4, 0.95, mats[1]));
+    for (const f of feet) grp.add(post(f, 4, 0.13, mats[0]));
+    grp.add(spanBanner(feet[0], feet[1], 4, 0.95, mats[1], 2));
     G.gates.push({ s, d, mats, done: false, hit: false });
   }
-  // 雪道邊界桿
-  const edge = new THREE.InstancedMesh(
-    new THREE.CylinderGeometry(0.07, 0.07, 1.8, 4),
-    new THREE.MeshBasicMaterial({ color: "#ff8a3c" }),
-    Math.ceil(r.L / 12) * 2,
-  );
-  const m4 = new THREE.Matrix4();
+  // 雪道邊界桿：橘色桿身，頂端色帶左紅右綠，餘光就分得出哪一側
+  const edgeN = Math.ceil(r.L / 12) * 2,
+    edge = new THREE.InstancedMesh(
+      new THREE.CylinderGeometry(0.055, 0.07, 2.1, 6),
+      new THREE.MeshLambertMaterial({ color: "#ff8a3c" }),
+      edgeN,
+    ),
+    band = new THREE.InstancedMesh(
+      new THREE.CylinderGeometry(0.095, 0.095, 0.34, 8),
+      new THREE.MeshLambertMaterial(),
+      edgeN,
+    );
+  const m4 = new THREE.Matrix4(),
+    bandCol = [new THREE.Color("#e23b2e"), new THREE.Color("#2fa35a")];
   for (let s = 0, k = 0; s < r.L; s += 12)
     for (const side of [-1, 1]) {
       const p = r.at(s),
         w = r.wAt(s),
         x = p.x - p.tz * side * w,
-        z = p.z + p.tx * side * w;
-      edge.setMatrixAt(
-        k++,
-        m4.makeTranslation(x, world.heightAt(x, z) + 0.9, z),
-      );
+        z = p.z + p.tx * side * w,
+        y = world.heightAt(x, z);
+      edge.setMatrixAt(k, m4.makeTranslation(x, y + 0.85, z));
+      band.setMatrixAt(k, m4.makeTranslation(x, y + 1.72, z));
+      band.setColorAt(k++, bandCol[side < 0 ? 0 : 1]);
     }
-  grp.add(edge);
+  grp.add(edge, band);
   // 兩側邊線與地面箭頭：一眼看出雪道往哪裡走
   const LIFT = 0.3,
     lineV = [],
@@ -527,8 +743,12 @@ function startSki() {
     for (const side of [-1, 1]) {
       const wa = r.wAt(s),
         wb = r.wAt(s + 6);
-      put(lineV, a, 0, side * (wa - 0.5)), put(lineV, a, 0, side * (wa + 0.5)), put(lineV, b, 0, side * (wb - 0.5));
-      put(lineV, a, 0, side * (wa + 0.5)), put(lineV, b, 0, side * (wb + 0.5)), put(lineV, b, 0, side * (wb - 0.5));
+      (put(lineV, a, 0, side * (wa - 0.5)),
+        put(lineV, a, 0, side * (wa + 0.5)),
+        put(lineV, b, 0, side * (wb - 0.5)));
+      (put(lineV, a, 0, side * (wa + 0.5)),
+        put(lineV, b, 0, side * (wb + 0.5)),
+        put(lineV, b, 0, side * (wb - 0.5)));
     }
   }
   // 箭頭：左右兩臂各切成小段，順著地形起伏；尖端朝前
@@ -542,52 +762,167 @@ function startSki() {
           w1 = (side * ARM * (i + 1)) / N,
           f0 = 1.6 - (2.1 * i) / N,
           f1 = 1.6 - (2.1 * (i + 1)) / N;
-        put(arrowV, q, f0, w0), put(arrowV, q, f1, w1), put(arrowV, q, f0 - 1.1, w0);
-        put(arrowV, q, f1, w1), put(arrowV, q, f1 - 1.1, w1), put(arrowV, q, f0 - 1.1, w0);
+        (put(arrowV, q, f0, w0),
+          put(arrowV, q, f1, w1),
+          put(arrowV, q, f0 - 1.1, w0));
+        (put(arrowV, q, f1, w1),
+          put(arrowV, q, f1 - 1.1, w1),
+          put(arrowV, q, f0 - 1.1, w0));
       }
   }
-  for (const [arr, color, opacity] of [[lineV, "#ff8a3c", 0.75], [arrowV, "#ff5a1f", 0.62]]) {
+  for (const [arr, color, opacity] of [
+    [lineV, "#ff8a3c", 0.75],
+    [arrowV, "#ff5a1f", 0.62],
+  ]) {
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.Float32BufferAttribute(arr, 3));
     grp.add(
       new THREE.Mesh(
         g,
-        new THREE.MeshBasicMaterial({ color, transparent: true, opacity, side: THREE.DoubleSide, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }),
+        new THREE.MeshBasicMaterial({
+          color,
+          transparent: true,
+          opacity,
+          side: THREE.DoubleSide,
+          depthWrite: false,
+          polygonOffset: true,
+          polygonOffsetFactor: -4,
+          polygonOffsetUnits: -4,
+        }),
       ),
     );
   }
   // 跳台：排在旗門之間
   G.kickers = [];
-  const KL = 7, KW = 7.5, KH = 1.5;
+  const KL = 7,
+    KW = 7.5,
+    KH = 1.5;
   const wedge = new THREE.BufferGeometry();
-  const A = [-KW / 2, 0, -KL], B2 = [KW / 2, 0, -KL], C = [-KW / 2, 0, 0], D = [KW / 2, 0, 0], E = [-KW / 2, KH, 0], F = [KW / 2, KH, 0];
-  wedge.setAttribute("position", new THREE.Float32BufferAttribute([A, E, B2, B2, E, F, C, D, E, D, F, E, A, C, E, B2, F, D].flat(), 3));
+  const A = [-KW / 2, 0, -KL],
+    B2 = [KW / 2, 0, -KL],
+    C = [-KW / 2, 0, 0],
+    D = [KW / 2, 0, 0],
+    E = [-KW / 2, KH, 0],
+    F = [KW / 2, KH, 0];
+  wedge.setAttribute(
+    "position",
+    new THREE.Float32BufferAttribute(
+      [A, E, B2, B2, E, F, C, D, E, D, F, E, A, C, E, B2, F, D].flat(),
+      3,
+    ),
+  );
   wedge.computeVertexNormals();
-  const wedgeMat = new THREE.MeshStandardMaterial({ color: "#f4f9ff", roughness: 0.9, side: THREE.DoubleSide });
-  const lipMat = new THREE.MeshBasicMaterial({ color: "#ff5a1f" });
+  const wedgeMat = new THREE.MeshStandardMaterial({
+    color: "#f4f9ff",
+    roughness: 0.9,
+    side: THREE.DoubleSide,
+  });
+  const lipMat = new THREE.MeshBasicMaterial({
+    color: "#ff5a1f",
+    side: THREE.DoubleSide,
+  });
+  const poleMat = new THREE.MeshLambertMaterial({ color: "#22303f" });
+  // 起跳線、角旗：遠遠就看得出跳台的位置與寬度
+  const guideGeo = new THREE.BoxGeometry(0.24, 0.04, Math.hypot(KL, KH)),
+    guideMat = new THREE.MeshBasicMaterial({ color: "#1f6feb" }),
+    flagPoleGeo = new THREE.CylinderGeometry(0.045, 0.045, KH + 1.7, 6),
+    flagGeo = new THREE.BufferGeometry();
+  flagGeo.setAttribute(
+    "position",
+    new THREE.Float32BufferAttribute([0, 0, 0, 0, -0.55, 0, 0, -0.27, -0.9], 3),
+  );
   for (let s = 90 + gap * 1.5; s < r.L - 120; s += gap * 2) {
-    const p = r.at(s), y = world.heightAt(p.x, p.z), ya = world.heightAt(p.x + p.tx * 3, p.z + p.tz * 3);
+    const p = r.at(s),
+      y = world.heightAt(p.x, p.z),
+      ya = world.heightAt(p.x + p.tx * 3, p.z + p.tz * 3);
     const k = new THREE.Mesh(wedge, wedgeMat);
     k.position.set(p.x, y - 0.25, p.z);
     k.rotation.set(Math.atan2(y - ya, 3), Math.atan2(p.tx, p.tz), 0, "YXZ");
+    k.receiveShadow = true;
     const lip = new THREE.Mesh(new THREE.BoxGeometry(KW, 0.12, 0.3), lipMat);
     lip.position.set(0, KH, -0.1);
     k.add(lip);
+    for (const side of [-1, 1]) {
+      const guide = new THREE.Mesh(guideGeo, guideMat);
+      guide.position.set(side * (KW / 2 - 0.5), KH / 2 + 0.04, -KL / 2);
+      guide.rotation.x = -Math.atan2(KH, KL);
+      const pole = new THREE.Mesh(flagPoleGeo, poleMat);
+      pole.position.set(side * (KW / 2 + 0.3), (KH + 1.7) / 2, -0.1);
+      pole.castShadow = true;
+      const flag = new THREE.Mesh(flagGeo, lipMat);
+      flag.position.set(side * (KW / 2 + 0.3), KH + 1.7, -0.1);
+      k.add(guide, pole, flag);
+    }
     grp.add(k);
     G.kickers.push({ s, d: 0, len: KL, w: KW, h: KH });
   }
   // 隨機關卡：雪球、狼、雪怪
-  G.haz = createHazards(world, r, G.kickers, G.gates, grp);
-  // 終點
-  const e = r.at(r.L - 16),
+  G.haz = createHazards(world, r, G.kickers, G.gates, grp, { puff });
+  // 終點：格紋拱門加地上一道終點線
+  const fs = r.L - 16,
+    e = r.at(fs),
+    fw = r.wAt(fs),
     ends = [-1, 1].map((side) =>
-      ground(e.x - e.tz * side * r.wAt(r.L - 16), e.z + e.tx * side * r.wAt(r.L - 16)),
-    ),
-    postMat = new THREE.MeshLambertMaterial({ color: "#22303f" });
-  for (const f of ends) grp.add(post(f, 6.8, 0.18, postMat));
-  grp.add(
-    spanBanner(ends[0], ends[1], 6.8, 2.2, new THREE.MeshBasicMaterial({ color: "#ff5a1f", side: THREE.DoubleSide })),
+      ground(e.x - e.tz * side * fw, e.z + e.tx * side * fw),
+    );
+  for (const f of ends) grp.add(post(f, 6.8, 0.2, poleMat));
+  signBanner(
+    grp,
+    ends[0],
+    ends[1],
+    6.8,
+    2.2,
+    signTexture("finish"),
+    Math.max(1, Math.round((fw * 2) / 8.8)),
   );
+  const lineP = [],
+    lineUV = [],
+    cols = Math.ceil(fw);
+  for (let i = 0; i < cols; i++) {
+    const w0 = -fw + (2 * fw * i) / cols,
+      w1 = -fw + (2 * fw * (i + 1)) / cols,
+      u0 = (w0 + fw) / 2.4,
+      u1 = (w1 + fw) / 2.4;
+    (put(lineP, e, -1.2, w0), put(lineP, e, 1.2, w0), put(lineP, e, -1.2, w1));
+    (put(lineP, e, 1.2, w0), put(lineP, e, 1.2, w1), put(lineP, e, -1.2, w1));
+    lineUV.push(u0, 0, u0, 1, u1, 0, u0, 1, u1, 1, u1, 0);
+  }
+  const lineG = new THREE.BufferGeometry();
+  lineG.setAttribute("position", new THREE.Float32BufferAttribute(lineP, 3));
+  lineG.setAttribute("uv", new THREE.Float32BufferAttribute(lineUV, 2));
+  grp.add(
+    new THREE.Mesh(
+      lineG,
+      new THREE.MeshBasicMaterial({
+        map: signTexture("checker"),
+        transparent: true,
+        opacity: 0.85,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+        polygonOffset: true,
+        polygonOffsetFactor: -4,
+        polygonOffsetUnits: -4,
+      }),
+    ),
+  );
+  // 起點拱門
+  const st = r.at(9),
+    sw = Math.min(r.wAt(9), 8),
+    starts = [-1, 1].map((side) =>
+      ground(st.x - st.tz * side * sw, st.z + st.tx * side * sw),
+    );
+  for (const f of starts) grp.add(post(f, 5.4, 0.18, poleMat));
+  signBanner(
+    grp,
+    starts[0],
+    starts[1],
+    5.4,
+    1.35,
+    signTexture("start"),
+    Math.max(1, Math.round((sw * 2) / 5.4)),
+  );
+  // 壓雪面
+  grp.add(world.piste(r));
   // 雪霧：每顆粒子有自己的大小與壽命，會擴散、變淡
   const SN = (G.sprayN = lowPower ? 360 : 800);
   G.sprayI = 0;
@@ -629,7 +964,16 @@ function startSki() {
   tg.setAttribute("position", new THREE.BufferAttribute(G.trackP, 3));
   G.track = new THREE.Mesh(
     tg,
-    new THREE.MeshBasicMaterial({ color: "#8ea4c0", transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }),
+    new THREE.MeshBasicMaterial({
+      color: "#8ea4c0",
+      transparent: true,
+      opacity: 0.5,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -2,
+    }),
   );
   G.track.frustumCulled = false;
   grp.add(G.track);
@@ -638,6 +982,7 @@ function startSki() {
   world.scene.add(grp);
   setupHud(r, false);
   setMode("count");
+  syncR();
   placeSkier(0, "count");
 }
 
@@ -650,9 +995,17 @@ function setupHud(r, fly) {
   $("hTime").textContent = fly ? "" : "0:00.0";
 }
 
+// 畫面狀態直接對齊物理狀態（倒數、結算時不需要內插）
+function syncR() {
+  R.s = G.ps = G.s;
+  R.d = G.pd = G.d;
+  R.y = G.py = G.y;
+  R.ang = G.pang = G.ang;
+}
+
 function skierPos(out) {
-  G.run.at(G.s, P);
-  out.set(P.x - P.tz * G.d, 0, P.z + P.tx * G.d);
+  G.run.at(R.s, P);
+  out.set(P.x - P.tz * R.d, 0, P.z + P.tx * R.d);
   out.y = world.heightAt(out.x, out.z);
   return out;
 }
@@ -660,8 +1013,8 @@ function skierPos(out) {
 // cam：count 起跑前繞到正面、ski 跟在後方、result 終點歡呼
 function placeSkier(dt, cam = "ski") {
   const pos = skierPos(tA),
-    c = Math.cos(G.ang),
-    s = Math.sin(G.ang);
+    c = Math.cos(R.ang),
+    s = Math.sin(R.ang);
   const hx = P.tx * c - P.tz * s,
     hz = P.tz * c + P.tx * s; // 實際行進方向
   const ahead = world.heightAt(pos.x + hx * 3, pos.z + hz * 3);
@@ -671,49 +1024,72 @@ function placeSkier(dt, cam = "ski") {
   sk.position.copy(pos);
   sk.rotation.set(G.pitch, Math.atan2(hx, hz), 0, "YXZ");
   G.skier.update(dt, {
-    phase: cam === "ski" ? "ski" : cam === "result" && !G.failed ? "cheer" : "idle",
+    phase:
+      cam === "ski"
+        ? "ski"
+        : cam !== "result"
+          ? "idle"
+          : G.failed
+            ? "sad"
+            : "cheer",
+    ready: cam === "count" && G.cd < 1.3,
     steer: (input.right ? 1 : 0) - (input.left ? 1 : 0),
-    ang: G.ang,
+    ang: R.ang,
     v: G.v,
     brake: input.brake,
     tuck: input.tuck,
     push: G.push,
-    y: G.y,
+    y: R.y,
     air: G.air,
     trick: G.trick,
+    impact: G.impact,
   });
+  G.impact = 0;
 
   // 鏡頭跟在路線方向後方，轉彎時畫面才不會亂晃
   const bx = P.tx * 0.75 + hx * 0.25,
     bz = P.tz * 0.75 + hz * 0.25;
   let fov = 58;
   if (cam === "ski") {
-    tB.set(pos.x - bx * 13, 0, pos.z - bz * 13);
-    tB.y = Math.max(pos.y + 5.2, world.heightAt(tB.x, tB.z) + 3.2);
+    // 越快拉得越遠、蹲低時貼近雪面；落地時鏡頭跟著往下沉一下
+    const back = 12.5 + Math.min(2.5, G.v * 0.07) - (input.tuck ? 1.2 : 0),
+      up = 5.2 - (input.tuck ? 0.8 : 0) + R.y * 0.4 + G.dip;
+    tB.set(pos.x - bx * back, 0, pos.z - bz * back);
+    tB.y = Math.max(pos.y + up, world.heightAt(tB.x, tB.z) + 3.2);
     tC.set(
       pos.x + bx * 14,
-      world.heightAt(pos.x + bx * 14, pos.z + bz * 14) + 1.6,
+      world.heightAt(pos.x + bx * 14, pos.z + bz * 14) + 1.6 + R.y * 0.3,
       pos.z + bz * 14,
     );
-    camera.up.set(-P.tz * G.ang * 0.09, 1, P.tx * G.ang * 0.09); // 轉彎時畫面微微傾斜
+    camera.up.set(-P.tz * R.ang * 0.09, 1, P.tx * R.ang * 0.09); // 轉彎時畫面微微傾斜
     follow(tB, tC, dt, 5);
-    fov += Math.min(22, G.v * 0.7);
+    fov += Math.min(24, G.v * 0.7) + (input.tuck ? 3 : 0);
   } else {
     const front = cam === "result";
     let u = front ? 1 : Math.min(1, Math.max(0, (G.cd - 0.5) / 2.7));
     u = u * u * (3 - 2 * u);
-    const phi = front ? Math.PI + Math.sin(clock * 0.5) * 0.5 : Math.PI * 0.86 * u;
+    const phi = front
+      ? Math.PI + Math.sin(clock * 0.5) * 0.5
+      : Math.PI * 0.86 * u;
     const dist = front ? 7 : 13 - 7 * u,
       cp = Math.cos(phi),
       sp = Math.sin(phi);
-    tB.set(pos.x + (-bx * cp - bz * sp) * dist, 0, pos.z + (bx * sp - bz * cp) * dist);
+    tB.set(
+      pos.x + (-bx * cp - bz * sp) * dist,
+      0,
+      pos.z + (bx * sp - bz * cp) * dist,
+    );
     tB.y = Math.max(pos.y + 5.2 - 3 * u, world.heightAt(tB.x, tB.z) + 1.4);
     tC.set(pos.x + bx * 14 * (1 - u), pos.y + 1.6, pos.z + bz * 14 * (1 - u));
     if (front) {
       // 把人物讓到成績面板旁邊
-      const vx = pos.x - tB.x, vz = pos.z - tB.z, l = Math.hypot(vx, vz) || 1;
-      if (camera.aspect > 1) { tC.x += (-vz / l) * 2.2; tC.z += (vx / l) * 2.2; }
-      else tC.y -= 1.3;
+      const vx = pos.x - tB.x,
+        vz = pos.z - tB.z,
+        l = Math.hypot(vx, vz) || 1;
+      if (camera.aspect > 1) {
+        tC.x += (-vz / l) * 2.2;
+        tC.z += (vx / l) * 2.2;
+      } else tC.y -= 1.3;
     }
     camera.up.set(0, 1, 0);
     follow(tB, tC, dt, 6);
@@ -725,27 +1101,61 @@ function placeSkier(dt, cam = "ski") {
   }
 }
 
-const look = v3();
+const look = v3(),
+  camBase = v3(); // 不含震動的鏡頭位置
 function follow(pos, target, dt, rate) {
   const k = G.snap ? 1 : 1 - Math.exp(-dt * rate);
-  camera.position.lerp(pos, k);
+  camBase.lerp(pos, k);
   look.lerp(target, k);
+  camera.position.copy(camBase);
+  if (G.shake > 0.002) {
+    camera.position.x += Math.sin(clock * 71) * G.shake;
+    camera.position.y += Math.sin(clock * 93 + 1) * G.shake;
+    camera.position.z += Math.sin(clock * 57 + 2) * G.shake * 0.6;
+  }
   camera.lookAt(look);
   G.snap = false;
 }
 
-function stepSki(dt) {
+// 得分：先乘上目前的連段倍率，再把連段往上加一
+function award(kind, base, label) {
+  const pts = Math.round(base * comboMult(G.combo));
+  G.pts[kind] += pts;
+  G.score += pts;
+  G.combo++;
+  G.bestCombo = Math.max(G.bestCombo, G.combo);
+  if (label) popup(`${label} +${pts}`);
+  else if (G.combo % 4 === 0 && G.combo <= 12)
+    popup(`連段倍率 ×${comboMult(G.combo)}`);
+  bump("hScore");
+}
+function breakCombo() {
+  if (G.combo >= 2) bump("hCombo", "drop");
+  G.combo = 0;
+}
+// 讓 HUD 上的數字跳一下
+function bump(id, cls = "pop") {
+  const el = $(id).parentElement;
+  el.classList.remove("pop", "drop");
+  void el.offsetWidth;
+  el.classList.add(cls);
+}
+
+// 物理與判定：固定步長，一幀可能跑零到數次
+function simulate(dt) {
   const r = G.run;
   G.t += dt;
   G.push = Math.max(0, G.push - dt);
   const B = G.board;
   const steer = (input.right ? 1 : 0) - (input.left ? 1 : 0);
-  G.ang += (steer * 0.82 - G.ang) * Math.min(1, dt * (G.air ? 1.1 : 3.4 * B.turn));
+  G.ang +=
+    (steer * 0.82 - G.ang) * Math.min(1, dt * (G.air ? 1.1 : 3.4 * B.turn));
   r.at(G.s, P);
   const sin = Math.max(0.1, P.grade / Math.hypot(1, P.grade)); // 平緩段也保有基本下滑力
   const drag = (input.tuck ? 0.0027 : 0.0045) * B.drag * G.v * G.v;
   let a = 9.81 * sin * Math.cos(G.ang) - drag;
-  if (G.air) a *= 0.7; // 騰空時不吃雪面阻力，也不能煞車
+  if (G.air)
+    a *= 0.7; // 騰空時不吃雪面阻力，也不能煞車
   else {
     a -= 0.29 + Math.abs(G.ang) * 0.11 * G.v;
     if (input.brake) a -= 7.5;
@@ -762,19 +1172,31 @@ function stepSki(dt) {
     if (G.trick) {
       G.trick.p += dt / 0.62;
       if (G.trick.p >= 1) {
-        const pts = Math.round((G.trick.type === "spin" ? 300 : 500) * B.trick);
-        G.score += pts;
-        popup(`${G.trick.name} +${pts}`);
+        award(
+          "trick",
+          (G.trick.type === "spin" ? POINTS.spin : POINTS.flip) * B.trick,
+          G.trick.name,
+        );
+        sfx.trick();
         G.trick = null;
       }
     }
     if (G.y <= 0) {
+      const impact = -G.vy;
       G.y = 0;
       G.air = false;
-      burst(14);
+      G.impact = impact;
+      G.dipV -= impact * 0.22;
+      G.shake = Math.max(G.shake, Math.min(0.28, impact * 0.022));
+      burst(8 + impact);
+      sfx.land(impact);
+      buzz(impact > 7 ? 25 : 10);
       if (G.trick) {
         G.trick = null;
         G.v *= 0.45;
+        G.skier.hit();
+        breakCombo();
+        sfx.miss();
         popup("落地失誤");
       }
     }
@@ -791,6 +1213,7 @@ function stepSki(dt) {
       G.onRamp = false;
       G.air = true;
       G.vy = Math.min(10.5, 3.5 + G.v * 0.26) * B.jump;
+      sfx.jump();
     } else G.y = 0;
   }
   const s0 = G.s;
@@ -809,23 +1232,41 @@ function stepSki(dt) {
       G.hp = Math.min(100, G.hp + 5);
       g.hit = true;
       g.mats.forEach((m) => m.color.set("#2fd27a"));
-      popup(`通過旗門 ${G.hits}/${G.gates.length}`);
-      $("hGate").parentElement.classList.remove("pop");
-      void $("hGate").offsetWidth;
-      $("hGate").parentElement.classList.add("pop");
-    } else g.mats.forEach((m) => m.color.set("#8d99a6"));
+      sfx.gate(G.combo);
+      award("gate", POINTS.gate);
+      bump("hGate");
+      buzz(8);
+    } else {
+      g.mats.forEach((m) => m.color.set("#8d99a6"));
+      if (G.combo >= 2) popup("漏掉旗門，連段中斷");
+      breakCombo();
+      sfx.miss();
+    }
   }
 
-  // 隨機關卡：預警與碰撞
+  // 隨機關卡：預警、閃避與碰撞
   G.inv = Math.max(0, G.inv - dt);
   const danger = G.haz.update(dt, G.s, G.d, G.y, clock);
   showWarn(danger.warn);
+  if (danger.pass) {
+    G.dodged++;
+    const { h, kind } = danger.pass;
+    if (kind === "leap") award("dodge", POINTS.leap, `飛越${h.name}`);
+    else if (kind === "near") award("dodge", POINTS.near, "驚險閃過");
+    if (kind !== "clear") sfx.near();
+  }
   if (danger.hit && G.inv <= 0) {
     const h = danger.hit;
     G.hp = Math.max(0, G.hp - h.dmg);
     G.inv = 1.6;
     G.v *= 0.35;
+    G.freeze = 0.09; // 撞擊瞬間定格
+    G.shake = 0.75;
+    G.skier.hit();
+    breakCombo();
     burst(16);
+    sfx.hit();
+    buzz(120);
     popup(`撞到${h.name} −${h.dmg}`);
     $("hud").classList.remove("hurt");
     void $("hud").offsetWidth;
@@ -837,28 +1278,44 @@ function stepSki(dt) {
       return finish(true);
     }
   }
+  if (G.s >= r.L - 4) finish();
+}
+
+// 畫面：依內插後的狀態擺人物、鏡頭、雪霧、痕跡與持續音
+function present(dt, alpha) {
+  const r = G.run;
+  R.s = G.ps + (G.s - G.ps) * alpha;
+  R.d = G.pd + (G.d - G.pd) * alpha;
+  R.y = G.py + (G.y - G.py) * alpha;
+  R.ang = G.pang + (G.ang - G.pang) * alpha;
   G.skier.group.visible = G.inv <= 0 || Math.floor(G.inv * 12) % 2 === 0; // 受傷後短暫無敵，人物閃爍
+  G.dipV += (-G.dip * 90 - G.dipV * 12) * dt;
+  G.dip += G.dipV * dt;
 
   // 雪霧與痕跡
   const pos = skierPos(tA),
-    ca = Math.cos(G.ang),
-    sa = Math.sin(G.ang),
+    ca = Math.cos(R.ang),
+    sa = Math.sin(R.ang),
     hx = P.tx * ca - P.tz * sa,
     hz = P.tz * ca + P.tx * sa, // 行進方向
     nx = -hz,
     nz = hx, // 行進方向的右側
-    grounded = !G.air && G.y === 0;
-  const edge = Math.min(1, Math.abs(G.ang) / 0.7) * Math.min(1.3, G.v / 13),
+    grounded = !G.air && R.y === 0;
+  const edge = Math.min(1, Math.abs(R.ang) / 0.7) * Math.min(1.3, G.v / 13),
     stop = input.brake ? Math.min(1.5, G.v / 7) : 0,
-    deep = Math.abs(G.d) > r.wAt(G.s) ? Math.min(1, G.v / 10) : 0;
+    deep = Math.abs(R.d) > r.wAt(R.s) ? Math.min(1, G.v / 10) : 0;
   if (grounded && G.v > 2) {
-    const out = -(Math.sign(G.ang) || 1); // 雪往彎道外側噴
-    G.sprayAcc += (edge * 240 + stop * 300 + deep * 120 + (G.v > 9 ? 22 : 0)) * dt * (lowPower ? 0.5 : 1);
+    const out = -(Math.sign(R.ang) || 1); // 雪往彎道外側噴
+    G.sprayAcc +=
+      (edge * 240 + stop * 300 + deep * 120 + (G.v > 9 ? 22 : 0)) *
+      dt *
+      (lowPower ? 0.5 : 1);
     while (G.sprayAcc >= 1) {
       G.sprayAcc--;
       const along = (Math.random() - 0.6) * 1.5,
         power = edge + stop * 0.8 + deep * 0.5,
-        side = stop > edge || deep > edge ? (Math.random() < 0.5 ? 1 : -1) : out,
+        side =
+          stop > edge || deep > edge ? (Math.random() < 0.5 ? 1 : -1) : out,
         lat = (1.2 + Math.random() * 4.2) * (0.25 + power) * side,
         fwd = G.v * (stop ? 0.55 : 0.28) * (0.6 + Math.random() * 0.7);
       snow(
@@ -891,11 +1348,14 @@ function stepSki(dt) {
     G.sprayF[k] = Math.min(1, (life / G.sprayL[k * 2 + 1]) * 1.6);
   }
   const sa3 = G.spray.geometry.attributes;
-  sa3.position.needsUpdate = sa3.aFade.needsUpdate = sa3.aSize.needsUpdate = true;
+  sa3.position.needsUpdate =
+    sa3.aFade.needsUpdate =
+    sa3.aSize.needsUpdate =
+      true;
 
   if (!grounded) G.trackLast = null;
   else {
-    const skid = Math.min(1, Math.abs(G.ang) * 0.9 + (input.brake ? 0.8 : 0)),
+    const skid = Math.min(1, Math.abs(R.ang) * 0.9 + (input.brake ? 0.8 : 0)),
       ski = G.board.kind === "ski",
       wid = (ski ? 0.12 : 0.3) + skid * (ski ? 0.2 : 0.55),
       cur = [];
@@ -925,17 +1385,33 @@ function stepSki(dt) {
   }
 
   placeSkier(dt, "ski");
-  if (G.s >= r.L - 4) finish();
+  updateAudio(G.v, grounded ? edge + stop * 0.8 + deep * 0.4 : 0, G.air);
+  // 速度線：高速時從畫面邊緣往中心收
+  const fx = $("speedfx"),
+    rush = Math.min(1, Math.max(0, (G.v - 17) / 12));
+  fx.style.opacity = rush * 0.6;
+  if (rush > 0)
+    fx.style.transform = `rotate(${Math.floor(clock * 24) * 37}deg) scale(${1.15 - rush * 0.15})`;
+
+  if (G.tipI < TIPS.length && G.t >= TIPS[G.tipI][0]) {
+    const el = $("tip");
+    el.textContent = TIPS[G.tipI++][1];
+    el.classList.remove("show");
+    void el.offsetWidth;
+    el.classList.add("show");
+    if (G.tipI === TIPS.length) store.set("tips", "1");
+  }
 }
 
 // 空白鍵：在地面是跳，騰空時再按一次做特技
 function pressJump() {
-  if (mode !== "ski") return;
+  if (mode !== "ski" || paused) return;
   if (!G.air) {
     G.air = true;
     G.onRamp = false;
     G.vy = 6.4 * G.board.jump;
     burst(8);
+    sfx.jump();
   } else if (!G.trick) {
     const dir = input.left ? 1 : -1;
     G.trick = input.tuck
@@ -944,6 +1420,7 @@ function pressJump() {
         ? { type: "back", name: "後空翻", p: 0 }
         : { type: "spin", name: "360 轉體", dir, p: 0 };
     G.vy = Math.max(G.vy, 0) + 3.4; // 再推一把，讓動作轉得完
+    sfx.jump();
   }
 }
 
@@ -955,18 +1432,26 @@ function popup(text) {
   el.classList.add("show");
 }
 
-// 起跳與落地的一圈雪花
 // 畫面上方的預警：是什麼、從哪邊來、還有多遠
 let warnKey = "";
 function showWarn(h) {
   const el = $("warn");
   if (!h) {
-    if (warnKey) (el.hidden = true), (warnKey = "");
+    if (warnKey) ((el.hidden = true), (warnKey = ""));
     return;
+  }
+  if (h !== G.warned) {
+    G.warned = h;
+    sfx.warn();
   }
   const dist = Math.max(0, Math.round((h.s - G.s) / 10) * 10),
     from = h.side < 0 ? "左" : "右",
-    text = h.type === "ball" ? `雪球從${from}邊滾過來` : h.type === "wolf" ? `狼從${from}邊衝出來，往${h.side < 0 ? "右" : "左"}閃` : "前方有雪怪，繞開牠",
+    text =
+      h.type === "ball"
+        ? `雪球從${from}邊滾過來`
+        : h.type === "wolf"
+          ? `狼從${from}邊衝出來，往${h.side < 0 ? "右" : "左"}閃`
+          : "前方有雪怪，繞開牠",
     k = `${h.type}${h.s}${dist}`;
   if (k === warnKey) return;
   warnKey = k;
@@ -984,13 +1469,40 @@ function snow(x, y, z, vx, vy, vz, life, size) {
   G.sprayS[k] = size;
 }
 
+// 在指定位置揚起一團雪：雪球滾動、狼奔跑、雪怪破雪而出
+function puff(x, y, z, n, power) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * 6.28,
+      sp = (0.3 + Math.random() * 0.7) * power;
+    snow(
+      x + Math.cos(a) * 0.6,
+      y,
+      z + Math.sin(a) * 0.6,
+      Math.cos(a) * sp,
+      0.6 + Math.random() * power,
+      Math.sin(a) * sp,
+      0.5 + Math.random() * 0.6,
+      0.3 + Math.random() * 0.5,
+    );
+  }
+}
+
 // 起跳、落地時向四周炸開的一圈雪
 function burst(n) {
   const pos = skierPos(tA);
   for (let i = 0; i < n * 3; i++) {
     const a = Math.random() * 6.28,
       sp = 1.5 + Math.random() * 4.5;
-    snow(pos.x + Math.cos(a) * 0.4, pos.y + 0.1, pos.z + Math.sin(a) * 0.4, Math.cos(a) * sp, 0.6 + Math.random() * 3, Math.sin(a) * sp, 0.4 + Math.random() * 0.6, 0.2 + Math.random() * 0.35);
+    snow(
+      pos.x + Math.cos(a) * 0.4,
+      pos.y + 0.1,
+      pos.z + Math.sin(a) * 0.4,
+      Math.cos(a) * sp,
+      0.6 + Math.random() * 3,
+      Math.sin(a) * sp,
+      0.4 + Math.random() * 0.6,
+      0.2 + Math.random() * 0.35,
+    );
   }
 }
 
@@ -1011,64 +1523,122 @@ function updateHud() {
   if (G.hp !== G.hpShown) {
     G.hpShown = G.hp;
     $("hHp").style.width = `${G.hp}%`;
-    $("hHp").style.background = G.hp > 60 ? "#2fd27a" : G.hp > 30 ? "#ffb400" : "#e0263c";
+    $("hHp").style.background =
+      G.hp > 60 ? "#2fd27a" : G.hp > 30 ? "#ffb400" : "#e0263c";
     $("hHpNum").textContent = G.hp;
   }
   $("hTime").textContent = fmtTime(G.t);
   $("hGate").textContent = `${G.hits}/${G.gates.length}`;
-  $("hTrick").textContent = G.score.toLocaleString();
+  $("hScore").textContent = G.score.toLocaleString();
+  if (G.combo !== G.comboShown) {
+    const el = $("hCombo");
+    if (G.combo > G.comboShown && G.comboShown >= 0) bump("hCombo");
+    G.comboShown = G.combo;
+    el.textContent = `×${comboMult(G.combo)}`;
+    el.parentElement.dataset.heat =
+      G.combo >= 12 ? 3 : G.combo >= 8 ? 2 : G.combo >= 4 ? 1 : 0;
+  }
 }
 
 function finish(failed = false) {
   const r = G.run,
-    id = `best:${key}:${r.id}`;
-  $("rEyebrow").textContent = failed ? "體力耗盡" : "抵達終點";
-  if (failed) {
-    $("rName").innerHTML = `${diffTag(r.diff)}　${r.zh}`;
-    $("rTime").textContent = "未完成";
-    $("rBest").textContent = `滑了 ${Math.round(G.s).toLocaleString()} m，離終點還有 ${Math.max(0, Math.round(r.L - G.s)).toLocaleString()} m`;
-    $("rStats").innerHTML = [
-      ["最高時速", `${Math.round(G.max * 3.6)} km/h`],
-      ["滑行時間", fmtTime(G.t)],
-      ["旗門", `${G.hits}/${G.gates.length}`],
-      ["特技分", G.score.toLocaleString()],
-    ]
-      .map((s) => `<div><dt>${s[0]}</dt><dd>${s[1]}</dd></div>`)
-      .join("");
-    G.v = 0;
-    G.ang = 0;
-    G.failed = true;
-    return setMode("result");
-  }
-  G.failed = false;
-  let best = null;
-  try {
-    best = parseFloat(localStorage.getItem(id));
-  } catch {}
-  const record = !(best > 0) || G.t < best;
-  if (record)
-    try {
-      localStorage.setItem(id, G.t.toFixed(2));
-    } catch {}
-  $("rName").innerHTML = `${diffTag(r.diff)}　${r.zh}`;
-  $("rTime").textContent = fmtTime(G.t);
-  $("rBest").textContent = record
-    ? best > 0
-      ? `刷新紀錄，先前最佳 ${fmtTime(best)}`
-      : "第一次完成這條雪道"
-    : `個人最佳 ${fmtTime(best)}`;
-  $("rStats").innerHTML = [
-    ["最高時速", `${Math.round(G.max * 3.6)} km/h`],
-    ["平均時速", `${Math.round((r.L / G.t) * 3.6)} km/h`],
-    ["旗門", `${G.hits}/${G.gates.length}`],
-    ["特技分", G.score.toLocaleString()],
-    ["剩餘體力", `${G.hp}`],
-  ]
-    .map((s) => `<div><dt>${s[0]}</dt><dd>${s[1]}</dd></div>`)
-    .join("");
+    old = readBest(r),
+    fin = finalScore({
+      points: G.score,
+      time: G.t,
+      par: G.par,
+      hp: G.hp,
+      failed,
+    }),
+    gr = failed
+      ? ""
+      : grade(fin.total, { gates: G.gates.length, kickers: G.kickers.length }),
+    plus = (n) => `+${n.toLocaleString()}`,
+    gates = `旗門 ${G.hits}/${G.gates.length}`;
+  G.failed = failed;
   G.v = 0;
   G.ang = 0;
+  $("rEyebrow").textContent = failed ? "體力耗盡" : "抵達終點";
+  $("rName").innerHTML = `${diffTag(r.diff)}　${r.zh}`;
+  $("rTime").textContent = failed ? "未完成" : fmtTime(G.t);
+  $("rGrade").textContent = gr;
+  $("rGrade").className = `grade g${gr}`;
+  $("rGrade").hidden = failed;
+  $("rScore").textContent = "0";
+  $("rCombo").textContent = G.bestCombo;
+  let note;
+  if (failed)
+    note = `滑了 ${Math.round(G.s).toLocaleString()} m，離終點還有 ${Math.max(0, Math.round(r.L - G.s)).toLocaleString()} m`;
+  else {
+    const newTime = !(old.time > 0) || G.t < old.time,
+      newScore = fin.total > old.score;
+    if (newTime) store.set(`best:${key}:${r.id}`, G.t.toFixed(2));
+    if (newScore) store.set(`score:${key}:${r.id}`, `${fin.total}|${gr}`);
+    note = !(old.time > 0)
+      ? "第一次完成這條雪道"
+      : newTime && newScore
+        ? "分數與時間都刷新紀錄"
+        : newScore
+          ? `刷新最高分，先前 ${old.score.toLocaleString()} 分`
+          : newTime
+            ? `刷新最快時間，先前 ${fmtTime(old.time)}`
+            : `個人最佳 ${old.score.toLocaleString()} 分・${fmtTime(old.time)}`;
+  }
+  $("rBest").textContent = note;
+  $("rStats").innerHTML = (
+    failed
+      ? [
+          [gates, plus(G.pts.gate)],
+          ["特技", plus(G.pts.trick)],
+          ["閃避", plus(G.pts.dodge)],
+          ["最高時速", `${Math.round(G.max * 3.6)} km/h`],
+          ["滑行時間", fmtTime(G.t)],
+          ["閃過危險", `${G.dodged} 次`],
+        ]
+      : [
+          ["時間", plus(fin.timeBonus)],
+          [gates, plus(G.pts.gate)],
+          ["特技", plus(G.pts.trick)],
+          ["閃避", plus(G.pts.dodge)],
+          ["剩餘體力", plus(fin.hpBonus)],
+          ["最高時速", `${Math.round(G.max * 3.6)} km/h`],
+        ]
+  )
+    .map((s) => `<div><dt>${s[0]}</dt><dd>${s[1]}</dd></div>`)
+    .join("");
+  G.res = {
+    total: fin.total,
+    grade: gr,
+    t: 0,
+    shown: -1,
+    tick: 0,
+    done: false,
+  };
   setMode("result");
+  if (failed) sfx.fail();
+  else sfx.finish();
+}
+
+// 結算：總分跳數字，跳完才蓋上評級
+function stepResult(dt) {
+  const res = G.res;
+  if (!res || res.done) return;
+  res.t += dt;
+  const u = Math.min(1, Math.max(0, (res.t - 0.5) / 1.2)),
+    val = Math.round(res.total * (1 - (1 - u) ** 3));
+  if (val !== res.shown) {
+    res.shown = val;
+    $("rScore").textContent = val.toLocaleString();
+    if ((res.tick -= dt) <= 0) {
+      res.tick = 0.05;
+      sfx.tick();
+    }
+  }
+  if (u >= 1) {
+    res.done = true;
+    $("rGrade").classList.add("show");
+    if (res.grade) sfx.grade(res.grade === "S");
+  }
 }
 
 function backToExplore() {
@@ -1083,7 +1653,9 @@ function loop(now) {
   raf = requestAnimationFrame(loop);
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
+  if (paused) return renderer.render(world.scene, camera);
   clock += dt;
+  G.shake = (G.shake || 0) * Math.exp(-dt * 7);
   if (mode === "explore") {
     if (tween) {
       tween.t = Math.min(1, tween.t + dt / 1.1);
@@ -1121,7 +1693,17 @@ function loop(now) {
     if (G.s >= r.L) backToExplore();
   } else if (mode === "count") {
     G.cd -= dt;
-    $("count").textContent = G.cd > 0.2 ? Math.ceil(G.cd - 0.2) : "出發";
+    const label = G.cd > 0.2 ? String(Math.ceil(G.cd - 0.2)) : "出發";
+    if (label !== G.cdShown) {
+      const el = $("count");
+      G.cdShown = el.textContent = label;
+      el.classList.remove("tick");
+      void el.offsetWidth;
+      el.classList.add("tick");
+      if (label === "出發") sfx.go();
+      else sfx.count();
+    }
+    syncR();
     placeSkier(dt, "count");
     updateHud();
     if (G.cd <= -0.5) {
@@ -1131,11 +1713,34 @@ function loop(now) {
       setMode("ski");
     }
   } else if (mode === "ski") {
-    stepSki(dt);
-    if (mode === "ski") updateHud();
+    if (G.freeze > 0) G.freeze -= dt;
+    else {
+      G.acc += dt;
+      while (G.acc >= STEP_T && mode === "ski") {
+        G.ps = G.s;
+        G.pd = G.d;
+        G.py = G.y;
+        G.pang = G.ang;
+        simulate(STEP_T);
+        G.acc -= STEP_T;
+      }
+    }
+    if (mode === "ski") {
+      present(G.freeze > 0 ? 0 : dt, G.acc / STEP_T);
+      updateHud();
+    }
   } else if (mode === "result" && G.group) {
+    syncR();
     placeSkier(dt, "result");
+    stepResult(dt);
   }
+  world.aimSun(
+    mode === "explore"
+      ? controls.target
+      : G.group
+        ? G.skier.group.position
+        : look,
+  );
   world.update(clock, camera);
   renderer.render(world.scene, camera);
 }
@@ -1162,6 +1767,18 @@ $("btnSki").onclick = startSki;
 $("btnAgain").onclick = startSki;
 $("btnOther").onclick = backToExplore;
 $("btnQuit").onclick = backToExplore;
+$("btnPause").onclick = () => setPaused(true);
+$("btnResume").onclick = () => setPaused(false);
+$("btnRestart").onclick = startSki;
+$("btnPauseQuit").onclick = backToExplore;
+$("btnMute").onclick = () => {
+  setMuted(!isMuted());
+  renderMute();
+};
+renderMute();
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) setPaused(true);
+});
 
 const keyMap = {
   ArrowLeft: "left",
@@ -1177,33 +1794,42 @@ const keyMap = {
   w: "tuck",
   W: "tuck",
 };
+const releaseInput = () =>
+  Object.keys(input).forEach((k) => (input[k] = false));
 const onKey = (down) => (e) => {
-  if (
-    e.key === "Escape" &&
-    down &&
-    $("app").hidden === false &&
-    mode !== "explore"
-  )
-    return backToExplore();
-  if (e.key === " " && (mode === "ski" || mode === "count")) {
+  const playing = mode === "ski" || mode === "count";
+  if (down && !e.repeat && !$("app").hidden) {
+    const k = e.key.toLowerCase();
+    if (k === "escape") {
+      if (playing) return setPaused(!paused);
+      if (mode !== "explore") return backToExplore();
+    }
+    if (k === "p" && playing) return setPaused(!paused);
+    if (k === "r" && (playing || mode === "result")) return startSki();
+    if (k === "m") {
+      setMuted(!isMuted());
+      return renderMute();
+    }
+  }
+  if (paused) return;
+  if (e.key === " " && playing) {
     e.preventDefault();
     if (down && !e.repeat) pressJump();
     return;
   }
   const k = keyMap[e.key];
-  if (!k || (mode !== "ski" && mode !== "count")) return;
+  if (!k || !playing) return;
   input[k] = down;
   e.preventDefault();
 };
 addEventListener("keydown", onKey(true));
 addEventListener("keyup", onKey(false));
-addEventListener("blur", () =>
-  Object.keys(input).forEach((k) => (input[k] = false)),
-);
+addEventListener("blur", releaseInput);
 for (const [id, k] of [
   ["tL", "left"],
   ["tR", "right"],
   ["tB", "brake"],
+  ["tT", "tuck"],
 ]) {
   const el = $(id),
     set = (v) => (e) => {

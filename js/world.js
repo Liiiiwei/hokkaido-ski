@@ -39,7 +39,10 @@ function bendRadius(p, i, k = 3) {
     h2 = Math.atan2(c[1] - b[1], c[0] - b[0]);
   let dh = Math.abs(h2 - h1);
   if (dh > Math.PI) dh = 2 * Math.PI - dh;
-  const len = (Math.hypot(b[0] - a[0], b[1] - a[1]) + Math.hypot(c[0] - b[0], c[1] - b[1])) / 2;
+  const len =
+    (Math.hypot(b[0] - a[0], b[1] - a[1]) +
+      Math.hypot(c[0] - b[0], c[1] - b[1])) /
+    2;
   return dh > 1e-4 ? len / dh : 1e6;
 }
 
@@ -57,7 +60,8 @@ function easeBends(r) {
     for (let i = 2; i < n - 2; i++)
       if (bendRadius(p, i) < MIN_R) {
         any = true;
-        for (let j = Math.max(1, i - 4); j <= Math.min(n - 2, i + 4); j++) hot[j] = 1;
+        for (let j = Math.max(1, i - 4); j <= Math.min(n - 2, i + 4); j++)
+          hot[j] = 1;
       }
     if (!any) break;
     touched = true;
@@ -72,7 +76,12 @@ function easeBends(r) {
   if (!touched) return;
   // 修圓後點距不再均勻，重新等距取樣，坡度依比例對應回去
   const out = resample(p, STEP),
-    g = out.map((_, i) => r.g[Math.min(r.g.length - 1, Math.round((i / (out.length - 1)) * (n - 1)))]);
+    g = out.map(
+      (_, i) =>
+        r.g[
+          Math.min(r.g.length - 1, Math.round((i / (out.length - 1)) * (n - 1)))
+        ],
+    );
   r.pts = out;
   r.g = g;
 }
@@ -85,7 +94,8 @@ function widths(pts, halfW) {
   for (let i = 0; i < n; i++) {
     w[i] = Math.min(w[i], bendRadius(pts, i) * 0.75);
     for (let j = i + skip; j < n; j++) {
-      const d = Math.hypot(pts[i][0] - pts[j][0], pts[i][1] - pts[j][1]) / 2 - 2;
+      const d =
+        Math.hypot(pts[i][0] - pts[j][0], pts[i][1] - pts[j][1]) / 2 - 2;
       if (d < halfW) {
         w[i] = Math.min(w[i], d);
         w[j] = Math.min(w[j], d);
@@ -97,16 +107,83 @@ function widths(pts, halfW) {
     o = new Float32Array(n);
   for (let i = 0; i < n; i++) {
     let v = halfW;
-    for (let j = Math.max(0, i - 14); j <= Math.min(n - 1, i + 14); j++) v = Math.min(v, w[j]);
+    for (let j = Math.max(0, i - 14); j <= Math.min(n - 1, i + 14); j++)
+      v = Math.min(v, w[j]);
     m[i] = Math.max(7, v);
   }
   for (let i = 0; i < n; i++) {
     let v = 0,
       c = 0;
-    for (let j = Math.max(0, i - 12); j <= Math.min(n - 1, i + 12); j++) (v += m[j]), c++;
+    for (let j = Math.max(0, i - 12); j <= Math.min(n - 1, i + 12); j++)
+      ((v += m[j]), c++);
     o[i] = v / c;
   }
   return o;
+}
+
+// 把多個零件併成一個帶頂點色的幾何，一個模型只要畫一次。
+// parts：[幾何, 顏色或 (x, y, z) => 顏色]
+function mergeColored(parts) {
+  const pos = [],
+    col = [],
+    c = new THREE.Color();
+  for (const [geo, color] of parts) {
+    const g = geo.index ? geo.toNonIndexed() : geo,
+      p = g.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i),
+        y = p.getY(i),
+        z = p.getZ(i);
+      pos.push(x, y, z);
+      c.set(typeof color === "function" ? color(x, y, z) : color);
+      col.push(c.r, c.g, c.b);
+    }
+  }
+  const out = new THREE.BufferGeometry();
+  out.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  out.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+  out.computeVertexNormals();
+  return out;
+}
+const boxAt = (w, h, d, x, y, z) =>
+  new THREE.BoxGeometry(w, h, d).translate(x, y, z);
+
+// 壓雪車留下的紋路：順著雪道的細溝，加上淡淡的橫向履帶痕
+let groomTex;
+function groomTexture() {
+  if (groomTex) return groomTex;
+  const cv = document.createElement("canvas"),
+    S = (cv.width = cv.height = 512),
+    g = cv.getContext("2d");
+  g.fillStyle = "#f6f9fc";
+  g.fillRect(0, 0, S, S);
+  for (let i = 0; i < 2600; i++) {
+    g.fillStyle =
+      Math.random() < 0.5 ? "rgba(255,255,255,.5)" : "rgba(170,190,214,.16)";
+    g.fillRect(
+      Math.random() * S,
+      Math.random() * S,
+      1 + Math.random() * 3,
+      2 + Math.random() * 10,
+    );
+  }
+  const lanes = 32,
+    w = S / lanes;
+  for (let i = 0; i < lanes; i++) {
+    g.fillStyle = "rgba(128,156,192,.26)";
+    g.fillRect(i * w, 0, 2.5, S);
+    g.fillStyle = "rgba(255,255,255,.6)";
+    g.fillRect(i * w + 3, 0, 2, S);
+  }
+  for (let j = 0; j < 8; j++) {
+    g.fillStyle = "rgba(140,165,198,.07)";
+    g.fillRect(0, (j * S) / 8, S, 5);
+  }
+  groomTex = new THREE.CanvasTexture(cv);
+  groomTex.wrapS = groomTex.wrapT = THREE.RepeatWrapping;
+  groomTex.colorSpace = THREE.SRGBColorSpace;
+  groomTex.anisotropy = 8;
+  return groomTex;
 }
 
 export function buildWorld(data, { lowPower = false } = {}) {
@@ -181,10 +258,50 @@ export function buildWorld(data, { lowPower = false } = {}) {
   );
   scene.add(sky);
 
+  // 太陽：一圈柔和的光暈，掛在光源方向的遠處
+  const glowCv = document.createElement("canvas");
+  glowCv.width = glowCv.height = 256;
+  const gg = glowCv.getContext("2d"),
+    grd = gg.createRadialGradient(128, 128, 0, 128, 128, 128);
+  grd.addColorStop(0, "rgba(255,252,240,1)");
+  grd.addColorStop(0.08, "rgba(255,246,220,.95)");
+  grd.addColorStop(0.25, "rgba(255,236,200,.32)");
+  grd.addColorStop(1, "rgba(255,236,200,0)");
+  gg.fillStyle = grd;
+  gg.fillRect(0, 0, 256, 256);
+  const sunGlow = new THREE.Sprite(
+    new THREE.SpriteMaterial({
+      map: new THREE.CanvasTexture(glowCv),
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      fog: false,
+    }),
+  );
+  sunGlow.scale.setScalar(6400);
+  scene.add(sunGlow);
+
   scene.add(new THREE.HemisphereLight("#e4efff", "#b4c4d6", 1.75));
   const sun = new THREE.DirectionalLight("#fff0d8", 2.3);
-  sun.position.set(-0.55, 0.5, 0.67);
-  scene.add(sun);
+  const sunDir = new THREE.Vector3(-0.55, 0.5, 0.67).normalize();
+  sun.position.copy(sunDir);
+  scene.add(sun, sun.target);
+  // 影子只算滑雪者周圍一小塊，跟著人走
+  if (!lowPower) {
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(2048, 2048);
+    const sc = sun.shadow.camera;
+    sc.left = sc.bottom = -60;
+    sc.right = sc.top = 60;
+    sc.near = 1;
+    sc.far = 520;
+    sc.updateProjectionMatrix();
+    sun.shadow.bias = -0.0004;
+    sun.shadow.normalBias = 0.04;
+  }
+  const aimSun = (p) => {
+    sun.target.position.copy(p);
+    sun.position.copy(p).addScaledVector(sunDir, 260);
+  };
 
   // 路線
   const runs = data.runs.map((r) => {
@@ -313,16 +430,16 @@ export function buildWorld(data, { lowPower = false } = {}) {
   tg.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
   tg.setIndex(new THREE.BufferAttribute(idx, 1));
   tg.computeVertexNormals();
-  scene.add(
-    new THREE.Mesh(
-      tg,
-      new THREE.MeshStandardMaterial({
-        map: tex,
-        roughness: 0.92,
-        metalness: 0,
-      }),
-    ),
+  const terrain = new THREE.Mesh(
+    tg,
+    new THREE.MeshStandardMaterial({
+      map: tex,
+      roughness: 0.92,
+      metalness: 0,
+    }),
   );
+  terrain.receiveShadow = !lowPower;
+  scene.add(terrain);
 
   // 貼地色帶
   function ribbon(pts, width, lift, color, opacity = 1) {
@@ -369,18 +486,109 @@ export function buildWorld(data, { lowPower = false } = {}) {
   );
   scene.add(mapLayer);
 
-  // 樹
-  const cone = new THREE.ConeGeometry(3.4, 11, 6, 3);
-  cone.translate(0, 6.5, 0);
-  const cc = [],
-    green = new THREE.Color("#1c4636"),
-    white = new THREE.Color("#eef4f7");
-  for (let i = 0; i < cone.attributes.position.count; i++) {
-    const y = cone.attributes.position.getY(i);
-    c.copy(y > 7.5 ? white : green);
-    cc.push(c.r, c.g, c.b);
+  // 滑行時鋪在雪道上的壓雪面：貼著地形起伏，兩側淡出到自然雪面
+  function piste(run) {
+    const COLS = 16,
+      ROW = 3,
+      rows = Math.floor(run.L / ROW) + 1,
+      pos = new Float32Array(rows * (COLS + 1) * 3),
+      uv = new Float32Array(rows * (COLS + 1) * 2),
+      col = new Float32Array(rows * (COLS + 1) * 4),
+      ix = [],
+      q = {};
+    for (let j = 0; j < rows; j++) {
+      const sj = Math.min(run.L, j * ROW),
+        half = run.wAt(sj) + 1.5,
+        ends = Math.min(1, sj / 12, (run.L - sj) / 12); // 頭尾也淡出
+      run.at(sj, q);
+      for (let i = 0; i <= COLS; i++) {
+        const k = j * (COLS + 1) + i,
+          d = ((i / COLS) * 2 - 1) * half,
+          x = q.x - q.tz * d,
+          z = q.z + q.tx * d;
+        pos.set([x, surfaceAt(x, z) + 0.1, z], k * 3);
+        uv.set([d / 9, sj / 9], k * 2);
+        col.set(
+          [1, 1, 1, clamp((half - Math.abs(d)) / 4.5, 0, 1) * ends * 0.94],
+          k * 4,
+        );
+        if (j && i) {
+          const a = k - COLS - 2,
+            b = k - COLS - 1;
+          ix.push(a, k - 1, b, b, k - 1, k);
+        }
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    g.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
+    g.setAttribute("color", new THREE.BufferAttribute(col, 4));
+    g.setIndex(ix);
+    g.computeVertexNormals();
+    const m = new THREE.Mesh(
+      g,
+      new THREE.MeshStandardMaterial({
+        map: groomTexture(),
+        vertexColors: true,
+        transparent: true,
+        depthWrite: false,
+        roughness: 0.82,
+        side: THREE.DoubleSide,
+        polygonOffset: true,
+        polygonOffsetFactor: -1,
+        polygonOffsetUnits: -1,
+      }),
+    );
+    m.receiveShadow = !lowPower;
+    m.renderOrder = -1; // 痕跡、邊線、箭頭都畫在它上面
+    return m;
   }
-  cone.setAttribute("color", new THREE.Float32BufferAttribute(cc, 3));
+
+  // 樹：三層帶積雪的針葉樹為主，混一些落葉後的白樺
+  const green = new THREE.Color("#1c4636"),
+    deep = new THREE.Color("#14382c"),
+    white = new THREE.Color("#eef4f7");
+  const tier = (r, h, base, turn) => {
+    const geo = new THREE.ConeGeometry(r, h, 7, 2, true);
+    geo.rotateY(turn);
+    geo.translate(0, base + h / 2, 0);
+    // 每一層上半截積雪，下緣露出深色枝葉
+    return [
+      geo,
+      (x, y) =>
+        (y - base) / h > 0.42 ? white : (y - base) / h > 0.01 ? green : deep,
+    ];
+  };
+  const conifer = mergeColored([
+    [
+      new THREE.CylinderGeometry(0.4, 0.6, 3, 5, 1, true).translate(0, 1.5, 0),
+      "#4b3a2c",
+    ],
+    tier(3.7, 5.2, 1.8, 0),
+    tier(2.9, 4.6, 4.9, 0.5),
+    tier(1.9, 4.2, 7.9, 1.1),
+  ]);
+  const twig = (len, y, yaw, tilt) => {
+    const geo = new THREE.CylinderGeometry(0.035, 0.09, len, 4, 1, true);
+    geo.translate(0, len / 2, 0);
+    geo.rotateZ(tilt);
+    geo.rotateY(yaw);
+    geo.translate(0, y, 0);
+    return [geo, "#8d8479"];
+  };
+  const birch = mergeColored([
+    // 白色樹幹上一段一段的深色橫紋
+    [
+      new THREE.CylinderGeometry(0.16, 0.3, 10, 6, 10, true).translate(0, 5, 0),
+      (x, y) => (Math.round(y) % 3 === 1 && y < 9 ? "#5b5650" : "#ece8df"),
+    ],
+    twig(3.4, 5.2, 0.3, 0.8),
+    twig(3.0, 6.3, 2.5, -0.75),
+    twig(2.6, 7.2, 4.4, 0.7),
+    twig(2.2, 8.1, 1.4, -0.6),
+    twig(2.0, 9.2, 5.5, 0.35),
+    twig(1.6, 9.6, 3.2, -0.3),
+  ]);
   const spots = [];
   const tryPlace = (x, z) => {
     if (
@@ -408,17 +616,19 @@ export function buildWorld(data, { lowPower = false } = {}) {
   const scatter = lowPower ? 9000 : 26000;
   for (let i = 0; i < scatter; i++)
     tryPlace(x0 + Math.random() * spanX, z0 + Math.random() * spanZ);
-  const trees = new THREE.InstancedMesh(
-    cone,
-    new THREE.MeshLambertMaterial({ vertexColors: true }),
-    spots.length / 2,
-  );
+  const total = spots.length / 2,
+    isBirch = Array.from({ length: total }, () => Math.random() < 0.13),
+    nBirch = isBirch.filter(Boolean).length,
+    treeMat = new THREE.MeshLambertMaterial({ vertexColors: true }),
+    conifers = new THREE.InstancedMesh(conifer, treeMat, total - nBirch),
+    birches = new THREE.InstancedMesh(birch, treeMat, nBirch);
   const m4 = new THREE.Matrix4(),
     qt = new THREE.Quaternion(),
     sc = new THREE.Vector3(),
     tp = new THREE.Vector3(),
-    up = new THREE.Vector3(0, 1, 0);
-  for (let i = 0; i < spots.length / 2; i++) {
+    up = new THREE.Vector3(0, 1, 0),
+    tint = new THREE.Color();
+  for (let i = 0, ci = 0, bi = 0; i < total; i++) {
     const s = 0.7 + Math.random() * 1.1;
     tp.set(
       spots[i * 2],
@@ -427,52 +637,127 @@ export function buildWorld(data, { lowPower = false } = {}) {
     );
     qt.setFromAxisAngle(up, Math.random() * 6.28);
     m4.compose(tp, qt, sc.set(s, s * (0.9 + Math.random() * 0.5), s));
-    trees.setMatrixAt(i, m4);
+    if (isBirch[i]) birches.setMatrixAt(bi++, m4);
+    else {
+      // 每棵樹深淺略有不同，整片樹林才不會像複製貼上
+      conifers.setColorAt(ci, tint.setScalar(0.8 + Math.random() * 0.28));
+      conifers.setMatrixAt(ci++, m4);
+    }
   }
-  scene.add(trees);
+  scene.add(conifers, birches);
 
-  // 纜車
+  // 纜車：支柱帶橫臂，上下行各一條纜線，車廂與吊椅沿纜線方向擺
   const cabins = [];
   const liftGroup = new THREE.Group();
-  const towerGeo = new THREE.CylinderGeometry(0.5, 0.7, 12, 6);
-  const towerMat = new THREE.MeshLambertMaterial({ color: "#56626e" });
+  const ARM = 2.3, // 纜線離支柱中心的距離
+    liftMat = new THREE.MeshLambertMaterial({ vertexColors: true }),
+    cableMat = new THREE.LineBasicMaterial({ color: "#2b3540" });
+  const towerGeo = mergeColored([
+    [
+      new THREE.CylinderGeometry(0.42, 0.68, 12, 6).translate(0, 6, 0),
+      "#5b6773",
+    ],
+    [boxAt(ARM * 2 + 1, 0.4, 0.55, 0, 12, 0), "#48535e"],
+    [boxAt(ARM * 2 + 1.1, 0.14, 0.7, 0, 12.27, 0), "#eef4f7"], // 橫臂上的積雪
+    [boxAt(0.3, 0.5, 2, -ARM, 11.75, 0), "#2b3540"],
+    [boxAt(0.3, 0.5, 2, ARM, 11.75, 0), "#2b3540"],
+    [boxAt(1.5, 0.5, 1.5, 0, 0.25, 0), "#8b959f"],
+  ]);
+  const gondolaGeo = mergeColored([
+    [boxAt(3, 2.7, 3.6, 0, 0, 0), "#ff5a1f"],
+    [boxAt(3.06, 1.05, 3.1, 0, 0.35, 0), "#22364b"], // 兩側車窗
+    [boxAt(2.5, 1.05, 3.66, 0, 0.35, 0), "#22364b"], // 前後車窗
+    [boxAt(3.2, 0.24, 3.8, 0, 1.45, 0), "#f4f8fc"],
+    [boxAt(3.04, 0.2, 3.64, 0, -1.2, 0), "#b83c10"],
+    [boxAt(0.2, 1.9, 0.2, 0, 2.5, 0), "#56626e"],
+    [boxAt(0.5, 0.22, 1, 0, 3.4, 0), "#2b3540"],
+  ]);
+  const chairGeo = mergeColored([
+    [boxAt(2.7, 0.16, 0.75, 0, 0, 0), "#f2c230"],
+    [boxAt(2.7, 0.85, 0.14, 0, 0.48, -0.36), "#f2c230"],
+    [boxAt(0.1, 0.6, 0.1, -1.3, 0.3, 0.1), "#56626e"],
+    [boxAt(0.1, 0.6, 0.1, 1.3, 0.3, 0.1), "#56626e"],
+    [boxAt(2.7, 0.08, 0.08, 0, 0.62, 0.42), "#56626e"], // 安全桿
+    [boxAt(2.4, 0.08, 0.08, 0, -0.62, 0.5), "#56626e"], // 腳踏桿
+    [boxAt(0.08, 0.62, 0.08, 0, -0.31, 0.5), "#56626e"],
+    [boxAt(0.12, 2.4, 0.12, 0, 1.3, -0.3), "#56626e"],
+    [boxAt(0.4, 0.18, 0.8, 0, 2.5, -0.3), "#2b3540"],
+  ]);
+  const stationGeo = mergeColored([
+    [boxAt(8, 4.2, 10, 0, 2.1, 0), "#3a4a5c"],
+    [boxAt(8.1, 1.3, 7, 0, 2.6, 0), "#9fc6e6"], // 側窗
+    [boxAt(8.8, 0.5, 11, 0, 4.45, 0), "#ff5a1f"],
+    [boxAt(9, 0.3, 11.2, 0, 4.85, 0), "#f4f8fc"], // 屋頂積雪
+  ]);
+  // 站房不能蓋在雪道上：離任何一條雪道太近就往外推開
+  const CLEAR = 20;
+  const offPiste = (x, z) => {
+    for (let pass = 0; pass < 3; pass++) {
+      let best = null,
+        bd = CLEAR;
+      for (const r of runs)
+        for (const q of r.pts) {
+          const d = Math.hypot(x - q[0], z - q[1]);
+          if (d < bd) ((bd = d), (best = q));
+        }
+      if (!best) break;
+      const ux = bd > 0.01 ? (x - best[0]) / bd : 1,
+        uz = bd > 0.01 ? (z - best[1]) / bd : 0;
+      x = best[0] + ux * (CLEAR + 1);
+      z = best[1] + uz * (CLEAR + 1);
+    }
+    return [x, z];
+  };
   data.lifts.forEach((l) => {
     const [a, b] = l.pts,
       len = Math.hypot(b[0] - a[0], b[1] - a[1]),
-      n = Math.max(2, Math.round(len / 90));
-    const path = [];
+      n = Math.max(2, Math.round(len / 90)),
+      dx = (b[0] - a[0]) / len,
+      dz = (b[1] - a[1]) / len,
+      yaw = Math.atan2(dx, dz),
+      gondola = l.type === "gondola",
+      lines = { [-1]: [], 1: [] };
     for (let i = 0; i <= n; i++) {
-      const x = a[0] + ((b[0] - a[0]) * i) / n,
-        z = a[1] + ((b[1] - a[1]) * i) / n,
-        y = heightAt(x, z);
-      path.push(new THREE.Vector3(x, y + 12, z));
-      const t = new THREE.Mesh(towerGeo, towerMat);
-      t.position.set(x, y + 6, z);
+      let x = a[0] + ((b[0] - a[0]) * i) / n,
+        z = a[1] + ((b[1] - a[1]) * i) / n;
+      if (i === 0 || i === n) [x, z] = offPiste(x, z);
+      const y = heightAt(x, z);
+      const t = new THREE.Mesh(
+        i === 0 || i === n ? stationGeo : towerGeo,
+        liftMat,
+      );
+      t.position.set(x, y - 0.3, z);
+      t.rotation.y = yaw;
       liftGroup.add(t);
+      for (const side of [-1, 1])
+        lines[side].push(
+          new THREE.Vector3(
+            x - dz * ARM * side,
+            y + (i === 0 || i === n ? 5.4 : 11.5),
+            z + dx * ARM * side,
+          ),
+        ); // 兩端降進站房
     }
-    liftGroup.add(
-      new THREE.Line(
-        new THREE.BufferGeometry().setFromPoints(path),
-        new THREE.LineBasicMaterial({ color: "#2b3540" }),
-      ),
-    );
-    const gondola = l.type === "gondola";
-    const geo = gondola
-      ? new THREE.BoxGeometry(3, 3, 3.6)
-      : new THREE.BoxGeometry(2.6, 1.2, 1);
-    const mat = new THREE.MeshLambertMaterial({
-      color: gondola ? "#ff5a1f" : "#f2c230",
-    });
+    for (const side of [-1, 1])
+      liftGroup.add(
+        new THREE.Line(
+          new THREE.BufferGeometry().setFromPoints(lines[side]),
+          cableMat,
+        ),
+      );
     const count = Math.max(2, Math.round(len / (gondola ? 130 : 170)));
     for (let i = 0; i < count; i++) {
-      const mesh = new THREE.Mesh(geo, mat);
+      const dir = i % 2 ? 1 : -1, // 一邊上山、一邊下山
+        mesh = new THREE.Mesh(gondola ? gondolaGeo : chairGeo, liftMat);
+      mesh.rotation.y = yaw + (dir > 0 ? 0 : Math.PI);
       liftGroup.add(mesh);
       cabins.push({
         mesh,
-        path,
+        path: lines[dir],
         phase: i / count,
         speed: (gondola ? 5 : 3) / len,
-        dir: i % 2 ? 1 : -1,
+        dir,
+        hang: gondola ? 3.5 : 2.6,
       });
     }
   });
@@ -538,13 +823,14 @@ export function buildWorld(data, { lowPower = false } = {}) {
     snowMat.uniforms.uT.value = t;
     snowMat.uniforms.uCam.value.copy(camera.position);
     sky.position.copy(camera.position);
+    sunGlow.position.copy(camera.position).addScaledVector(sunDir, 14000);
     for (const cb of cabins) {
       let f = (cb.phase + t * cb.speed * cb.dir) % 1;
       if (f < 0) f += 1;
       const u = f * (cb.path.length - 1),
         i = Math.min(cb.path.length - 2, u | 0);
       cb.mesh.position.copy(tmp.lerpVectors(cb.path[i], cb.path[i + 1], u - i));
-      cb.mesh.position.y -= 3;
+      cb.mesh.position.y -= cb.hang;
     }
   }
 
@@ -554,12 +840,14 @@ export function buildWorld(data, { lowPower = false } = {}) {
     heightAt,
     surfaceAt,
     ribbon,
+    piste,
     mapLayer,
     liftGroup,
     segs: data.segs,
     center,
     radius,
     viewDir,
+    aimSun,
     update,
   };
 }

@@ -17,7 +17,10 @@
       href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700&family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@700;900&display=swap"
       rel="stylesheet"
     />
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%276%27 fill=%27%230e1b2c%27/%3E%3Cpath d=%27M4 24 13 9l5 8 3-4 7 11z%27 fill=%27%23fff%27/%3E%3C/svg%3E">
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%276%27 fill=%27%230e1b2c%27/%3E%3Cpath d=%27M4 24 13 9l5 8 3-4 7 11z%27 fill=%27%23fff%27/%3E%3C/svg%3E"
+    />
     <link rel="stylesheet" href="css/style.css" />
     <script type="importmap">
       {
@@ -35,12 +38,12 @@
         <div class="hero-kanji" aria-hidden="true">雪</div>
         <div class="hero-inner">
           <div class="hero-copy">
-          <p class="eyebrow">北海道札幌｜2026–27 雪季</p>
-          <h1>出發前，<br />先滑一遍。</h1>
-          <p class="lede">
-            札幌手稻與札幌國際，兩座雪場的真實地形與雪道都搬進來了。先看每條雪道怎麼走、有多陡，再自己滑下去試試。
-          </p>
-        </div>
+            <p class="eyebrow">北海道札幌｜2026–27 雪季</p>
+            <h1>出發前，<br />先滑一遍。</h1>
+            <p class="lede">
+              札幌手稻與札幌國際，兩座雪場的真實地形與雪道都搬進來了。先看每條雪道怎麼走、有多陡，再自己滑下去試試。
+            </p>
+          </div>
           <div class="tickets" id="tickets"></div>
         </div>
         <svg
@@ -73,10 +76,18 @@
         <h2><span>04</span>怎麼玩</h2>
         <ol class="steps">
           <li><b>挑雪場</b>進入 3D 地形，拖曳旋轉、滾輪或雙指縮放。</li>
-          <li><b>挑雪道與雪板</b>點清單或地圖上的名稱，看長度、落差與坡度剖面。</li>
+          <li>
+            <b>挑雪道與雪板</b>點清單或地圖上的名稱，看長度、落差與坡度剖面。
+          </li>
           <li><b>飛覽</b>鏡頭沿雪道從頭飛到尾，先認路。</li>
           <li>
-            <b>開滑</b>方向鍵或 WASD：左右轉彎、下煞車、上蹲低加速。空白鍵跳躍，騰空時再按一次做特技，同時按住上或下會變成空翻。途中會隨機出現雪球、狼和雪怪，畫面上方會先預警，看清楚來向再閃開；被撞到會扣體力，穿過旗門可以補回一點，體力歸零就結束。手機用畫面上的按鈕。
+            <b>開滑</b>方向鍵或
+            WASD：左右轉彎、下煞車、上蹲低加速。空白鍵跳躍，騰空時再按一次做特技，同時按住上或下會變成空翻。途中會隨機出現雪球、狼和雪怪，畫面上方會先預警，看清楚來向再閃開；被撞到會扣體力，穿過旗門可以補回一點，體力歸零就結束。手機用畫面上的按鈕。
+          </li>
+          <li>
+            <b>拚評級</b
+            >連續穿過旗門、完成特技、貼著危險物閃過，都會把得分倍率往上疊，最高四倍；漏掉旗門或被撞到就歸零。抵達終點時再依時間與剩餘體力加分，結算給出
+            S 到 C 的評級。
           </li>
         </ol>
       </section>
@@ -120,28 +131,43 @@
           preserveAspectRatio="none"
         ></svg>
         <p class="note">長度與坡度依地形資料估算</p>
-        <div class="gear"><div id="gear"></div><p id="gearDesc"></p></div>
+        <p class="card-best" id="cBest" hidden></p>
+        <div class="gear">
+          <div id="gear"></div>
+          <p id="gearDesc"></p>
+        </div>
         <div class="actions">
           <button id="btnFly" class="ghost dark">飛覽預覽</button>
           <button id="btnSki" class="solid">開始滑行</button>
         </div>
       </section>
 
+      <div id="speedfx" aria-hidden="true"></div>
       <div id="hud" hidden>
         <div class="hud-top">
           <button id="btnQuit" class="ghost">× 結束</button>
+          <button id="btnPause" class="ghost" aria-label="暫停">Ⅱ 暫停</button>
           <div class="hud-name" id="hName"></div>
           <div class="hud-time" id="hTime">0:00.0</div>
         </div>
-        <div class="hud-hp"><span>體力</span><div><i id="hHp"></i></div><b id="hHpNum">100</b></div>
+        <div class="hud-hp">
+          <span>體力</span>
+          <div><i id="hHp"></i></div>
+          <b id="hHpNum">100</b>
+        </div>
         <div id="warn" hidden></div>
         <canvas id="mini" width="360" height="360"></canvas>
-        <div class="hud-speed"><b id="hSpeed">0</b><span id="hUnit">km/h</span></div>
+        <div class="hud-speed">
+          <b id="hSpeed">0</b><span id="hUnit">km/h</span>
+        </div>
         <div class="hud-side">
           <div><span>海拔</span><b id="hAlt">0</b> m</div>
           <div><span>剩餘</span><b id="hLeft">0</b> m</div>
           <div class="gates"><span>旗門</span><b id="hGate">0</b></div>
-          <div class="tricks"><span>特技</span><b id="hTrick">0</b></div>
+          <div class="score"><span>分數</span><b id="hScore">0</b></div>
+          <div class="combo" data-heat="0">
+            <span>倍率</span><b id="hCombo">×1</b>
+          </div>
         </div>
         <div class="hud-profile">
           <svg
@@ -152,10 +178,19 @@
           ><i id="hDot"></i>
         </div>
         <div class="touch">
-          <div><button id="tL" aria-label="左轉">◀</button><button id="tR" aria-label="右轉">▶</button></div>
-          <div><button id="tB">煞車</button><button id="tJ">跳</button></div>
+          <div>
+            <button id="tL" aria-label="左轉">◀</button
+            ><button id="tR" aria-label="右轉">▶</button>
+          </div>
+          <div>
+            <div class="stack">
+              <button id="tT">蹲</button><button id="tB">煞車</button>
+            </div>
+            <button id="tJ">跳</button>
+          </div>
         </div>
         <div id="pop"></div>
+        <div id="tip"></div>
       </div>
 
       <div id="count" hidden></div>
@@ -164,13 +199,34 @@
         <div class="sheet-in">
           <p class="eyebrow" id="rEyebrow">抵達終點</p>
           <h3 id="rName"></h3>
-          <div class="big" id="rTime"></div>
+          <div class="res-head">
+            <div class="big" id="rTime"></div>
+            <div class="grade" id="rGrade"></div>
+          </div>
           <p class="best" id="rBest"></p>
+          <div class="total">
+            <span>總分</span><b id="rScore">0</b>
+            <em>最高連段 <i id="rCombo">0</i></em>
+          </div>
           <dl id="rStats"></dl>
           <div class="actions">
             <button id="btnOther" class="ghost dark">換一條雪道</button>
             <button id="btnAgain" class="solid">再滑一次</button>
           </div>
+        </div>
+      </div>
+
+      <div id="pause" class="sheet" hidden>
+        <div class="sheet-in center">
+          <p class="eyebrow">暫停中</p>
+          <h3>喘口氣</h3>
+          <div class="actions col">
+            <button id="btnResume" class="solid">繼續滑</button>
+            <button id="btnRestart" class="ghost dark">重新開始</button>
+            <button id="btnMute" class="ghost dark">音效：開</button>
+            <button id="btnPauseQuit" class="ghost dark">結束，回到雪場</button>
+          </div>
+          <p class="keys">Esc 或 P 暫停／繼續　R 重新開始　M 音效開關</p>
         </div>
       </div>
 
