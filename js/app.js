@@ -435,6 +435,7 @@ function setMode(m) {
   mode = m;
   $("app").dataset.mode = m;
   setPaused(false);
+  touchAir(false);
   const explore = m === "explore";
   controls.enabled = explore;
   world.mapLayer.visible = explore;
@@ -620,13 +621,15 @@ const TIPS = (
     ? [
         "按住 ◀ ▶ 轉彎，從旗門中間穿過去",
         "按住「蹲」加速，「煞車」減速",
-        "按「跳」起跳，騰空時再按一次做特技",
+        "穩穩按住 ◀ 或 ▶ 就是刻滑，換邊的瞬間會加速",
+        "按「跳」起跳，騰空時按鈕會變成特技：↺ ↻ 轉體、前翻、後翻",
         "連續過旗門會疊高倍率，漏掉或被撞就歸零",
       ]
     : [
         "← → 轉彎，從旗門中間穿過去",
         "↑ 蹲低加速，↓ 煞車",
-        "空白鍵起跳，騰空時再按一次做特技",
+        "穩穩按住 ← 或 → 就是刻滑，換邊的瞬間會加速",
+        "空白鍵起跳，騰空時再按一次做特技，按住 ↑ 或 ↓ 變成空翻",
         "連續過旗門會疊高倍率，漏掉或被撞就歸零",
       ]
 ).map((text, i) => [0.6 + i * 5.5, text]);
@@ -661,6 +664,12 @@ function startSki() {
   G.snap = true;
   G.pitch = 0;
   G.push = 0;
+  G.carveDir = 0;
+  G.carveT = 0;
+  G.carving = false;
+  G.edge = null;
+  G.chain = 0;
+  G.boost = 0;
   G.hp = 100;
   G.hpShown = -1;
   G.failed = false;
@@ -1038,6 +1047,7 @@ function placeSkier(dt, cam = "ski") {
     v: G.v,
     brake: input.brake,
     tuck: input.tuck,
+    carve: G.carving,
     push: G.push,
     y: R.y,
     air: G.air,
@@ -1152,13 +1162,39 @@ function simulate(dt) {
     (steer * 0.82 - G.ang) * Math.min(1, dt * (G.air ? 1.1 : 3.4 * B.turn));
   r.at(G.s, P);
   const sin = Math.max(0.1, P.grade / Math.hypot(1, P.grade)); // 平緩段也保有基本下滑力
-  const drag = (input.tuck ? 0.0027 : 0.0045) * B.drag * G.v * G.v;
+  const drag = (input.tuck ? 0.0022 : 0.0045) * B.drag * G.v * G.v;
+  // 刻滑：夠快、在壓雪區內、穩穩按住同一邊。亂點方向或太慢都只算搓雪
+  const canCarve =
+    !G.air && !input.brake && G.v > 8.3 && Math.abs(G.d) <= r.wAt(G.s);
+  if (G.edge && (G.edge.gap += dt) > 0.45) ((G.edge = null), (G.chain = 0));
+  if (!canCarve || steer !== G.carveDir) {
+    // 放掉這一刃：壓得夠久就記下來，等著接下一刃
+    if (G.carveT >= 0.5) G.edge = { dir: G.carveDir, gap: 0 };
+    else if (G.carveDir) ((G.edge = null), (G.chain = 0));
+    G.carveDir = canCarve ? steer : 0;
+    G.carveT = 0;
+    if (!canCarve) ((G.edge = null), (G.chain = 0));
+    else if (G.edge && steer === -G.edge.dir) {
+      // 換刃：板子回彈推一把，連續換得有節奏另外給分
+      G.edge = null;
+      G.carveT = 0.26; // 接得上的換刃不退回搓雪
+      G.boost = 0.25;
+      G.chain++;
+      sfx.edge(G.chain);
+      buzz(6);
+      burst(5);
+      if (G.chain % 3 === 0) award("trick", POINTS.carve, "節奏刻滑");
+    }
+  } else if (steer) G.carveT += dt;
+  G.carving = G.carveT > 0.25;
+  G.boost = Math.max(0, G.boost - dt);
   let a = 9.81 * sin * Math.cos(G.ang) - drag;
   if (G.air)
     a *= 0.7; // 騰空時不吃雪面阻力，也不能煞車
   else {
-    a -= 0.29 + Math.abs(G.ang) * 0.11 * G.v;
-    if (input.brake) a -= 7.5;
+    a -= 0.29 + Math.abs(G.ang) * 0.11 * G.v * (G.carving ? 0.2 : 1);
+    if (G.boost > 0) a += 3.2 * B.turn;
+    if (input.brake) a -= 5.5;
     else if (G.push > 0) a += 3; // 起步撐杖推進
     const over = Math.abs(G.d) - r.wAt(G.s);
     if (over > 0) a -= (1.6 + over * 0.4) * B.powder; // 衝出壓雪區，深雪拖慢
@@ -1301,7 +1337,10 @@ function present(dt, alpha) {
     nx = -hz,
     nz = hx, // 行進方向的右側
     grounded = !G.air && R.y === 0;
-  const edge = Math.min(1, Math.abs(R.ang) / 0.7) * Math.min(1.3, G.v / 13),
+  const edge =
+      Math.min(1, Math.abs(R.ang) / 0.7) *
+      Math.min(1.3, G.v / 13) *
+      (G.carving ? 0.4 : 1), // 刻滑不搓雪，雪霧少很多
     stop = input.brake ? Math.min(1.5, G.v / 7) : 0,
     deep = Math.abs(R.d) > r.wAt(R.s) ? Math.min(1, G.v / 10) : 0;
   if (grounded && G.v > 2) {
@@ -1355,7 +1394,9 @@ function present(dt, alpha) {
 
   if (!grounded) G.trackLast = null;
   else {
-    const skid = Math.min(1, Math.abs(R.ang) * 0.9 + (input.brake ? 0.8 : 0)),
+    const skid = G.carving
+        ? 0
+        : Math.min(1, Math.abs(R.ang) * 0.9 + (input.brake ? 0.8 : 0)),
       ski = G.board.kind === "ski",
       wid = (ski ? 0.12 : 0.3) + skid * (ski ? 0.2 : 0.55),
       cur = [];
@@ -1385,7 +1426,13 @@ function present(dt, alpha) {
   }
 
   placeSkier(dt, "ski");
-  updateAudio(G.v, grounded ? edge + stop * 0.8 + deep * 0.4 : 0, G.air);
+  updateAudio(
+    G.v,
+    grounded ? edge + stop * 0.8 + deep * 0.4 + (G.carving ? 0.35 : 0) : 0,
+    G.air,
+    G.carving,
+  );
+  touchAir(G.air && !G.trick);
   // 速度線：高速時從畫面邊緣往中心收
   const fx = $("speedfx"),
     rush = Math.min(1, Math.max(0, (G.v - 17) / 12));
@@ -1412,15 +1459,42 @@ function pressJump() {
     G.vy = 6.4 * G.board.jump;
     burst(8);
     sfx.jump();
-  } else if (!G.trick) {
-    const dir = input.left ? 1 : -1;
-    G.trick = input.tuck
+  } else
+    doTrick(
+      input.tuck
+        ? "tuck"
+        : input.brake
+          ? "brake"
+          : input.left
+            ? "left"
+            : "right",
+    );
+}
+// 騰空時做特技。鍵盤是按住方向再按跳；手機是騰空後直接點對應的按鈕
+function doTrick(k) {
+  if (mode !== "ski" || paused || !G.air || G.trick) return false;
+  G.trick =
+    k === "tuck"
       ? { type: "front", name: "前空翻", p: 0 }
-      : input.brake
+      : k === "brake"
         ? { type: "back", name: "後空翻", p: 0 }
-        : { type: "spin", name: "360 轉體", dir, p: 0 };
-    G.vy = Math.max(G.vy, 0) + 3.4; // 再推一把，讓動作轉得完
-    sfx.jump();
+        : { type: "spin", name: "360 轉體", dir: k === "left" ? 1 : -1, p: 0 };
+  G.vy = Math.max(G.vy, 0) + 3.4; // 再推一把，讓動作轉得完
+  sfx.jump();
+  buzz(10);
+  return true;
+}
+// 手機按鈕在騰空時換成特技鍵
+const AIR_LABEL = { tL: "↺", tR: "↻", tT: "前翻", tB: "後翻", tJ: "轉體" },
+  GROUND_LABEL = {};
+let airUI = false;
+function touchAir(on) {
+  if (on === airUI) return;
+  airUI = on;
+  $("hud").classList.toggle("air", on);
+  for (const id in AIR_LABEL) {
+    GROUND_LABEL[id] ??= $(id).textContent;
+    $(id).textContent = on ? AIR_LABEL[id] : GROUND_LABEL[id];
   }
 }
 
@@ -1834,6 +1908,7 @@ for (const [id, k] of [
   const el = $(id),
     set = (v) => (e) => {
       e.preventDefault();
+      if (v && doTrick(k)) return; // 騰空時這一下是特技，不當成轉向
       input[k] = v;
       el.classList.toggle("down", v);
     };

@@ -65,8 +65,8 @@ export function suspendAudio(on) {
   else ctx.resume();
 }
 
-// 每幀更新持續音。speed 公尺／秒、edge 壓邊與煞車的強度 0～1.5、air 是否騰空
-export function updateAudio(speed, edge, air) {
+// 每幀更新持續音。speed 公尺／秒、edge 壓邊與煞車的強度 0～1.5、air 是否騰空、carving 是否刻滑（聲音較尖）
+export function updateAudio(speed, edge, air, carving) {
   if (!ctx) return;
   const t = ctx.currentTime,
     k = Math.min(1, speed / 30);
@@ -77,7 +77,11 @@ export function updateAudio(speed, edge, air) {
     t,
     0.06,
   );
-  carve.filter.frequency.setTargetAtTime(2200 + edge * 1600, t, 0.1);
+  carve.filter.frequency.setTargetAtTime(
+    2200 + edge * 1600 + (carving ? 2200 : 0),
+    t,
+    0.1,
+  );
 }
 export const quietAudio = () => updateAudio(0, 0, false);
 
@@ -155,6 +159,11 @@ export const sfx = {
         at: i * 0.055,
       }),
     );
+  },
+  edge(chain) {
+    const f = 520 * 2 ** (Math.min(6, chain) / 12);
+    tone(f, 0.14, { type: "triangle", vol: 0.16, to: f * 1.5 });
+    hiss(0.16, { freq: 2600, to: 5200, vol: 0.16 });
   },
   near() {
     tone(820, 0.16, { type: "triangle", vol: 0.24, to: 1640 });

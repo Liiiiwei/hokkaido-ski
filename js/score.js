@@ -1,14 +1,21 @@
 // 計分：連段倍率、通關總分與評級（純函式，不碰畫面）
-export const POINTS = { gate: 100, near: 150, leap: 250, spin: 300, flip: 500 };
+export const POINTS = {
+  gate: 100,
+  near: 150,
+  leap: 250,
+  spin: 300,
+  flip: 500,
+  carve: 60,
+};
 
 // 連續得分越多倍率越高，12 連段封頂 4 倍
 export const comboMult = (combo) => 1 + Math.min(12, Math.max(0, combo)) * 0.25;
 
-// 標準時間：用平均坡度的終端速度打八五折估算，與滑行物理的阻力係數一致
+// 標準時間：用平均坡度的終端速度打九折估算，與滑行物理的阻力係數一致
 export function parTime(len, avgDeg) {
   const sin = Math.max(0.1, Math.sin((avgDeg * Math.PI) / 180));
   const vt = Math.sqrt(Math.max(0.6, 9.81 * sin - 0.29) / 0.0045);
-  return len / (vt * 0.85);
+  return len / (vt * 0.9);
 }
 
 // 抵達終點才有時間與體力加分；體力耗盡只留途中拿到的分數

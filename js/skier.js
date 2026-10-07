@@ -518,7 +518,7 @@ export function createSkier(board = BOARDS[0], { blob = true } = {}) {
     sRoll.v += (Math.random() < 0.5 ? -1 : 1) * 5;
   }
 
-  /** state: { phase: idle|ski|cheer|sad, ready, steer, ang, v, brake, tuck, push, y, air, trick, impact } */
+  /** state: { phase: idle|ski|cheer|sad, ready, steer, ang, v, brake, tuck, carve, push, y, air, trick, impact } */
   function update(dt, s) {
     t += dt;
     const ski = s.phase === "ski",
@@ -539,7 +539,12 @@ export function createSkier(board = BOARDS[0], { blob = true } = {}) {
     wasAir = inAir;
 
     const roll = sRoll.step(
-      ski ? s.ang * 0.82 * Math.min(1, 0.25 + s.v / 8) * (inAir ? 0.4 : 1) : 0,
+      ski
+        ? s.ang *
+            0.82 *
+            Math.min(1, 0.25 + s.v / 8) *
+            (inAir ? 0.4 : s.carve ? 1.3 : 1) // 刻滑時整個人壓得更斜
+        : 0,
       dt,
     );
     lean.rotation.z = roll + wob * 0.3;
@@ -557,6 +562,7 @@ export function createSkier(board = BOARDS[0], { blob = true } = {}) {
         0.2 +
         Math.abs(s.ang) * 0.34 +
         (s.tuck ? 0.5 : 0) +
+        (s.carve ? 0.14 : 0) +
         (s.brake ? 0.22 : 0);
     if (inAir) crouchT = s.trick ? 0.78 : 0.45;
     if (cheer) crouchT = 0.12 - Math.abs(Math.sin(t * 6.5)) * 0.1;

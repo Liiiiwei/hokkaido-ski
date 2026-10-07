@@ -1731,3 +1731,15 @@ h1 {
   color: var(--ink);
   letter-spacing: 0;
 }
+
+/* 騰空時觸控鍵換成特技鍵 */
+#hud.air .touch button {
+  border-color: #ffd34d;
+  background: #ffb30055;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+#hud.air .touch #tL,
+#hud.air .touch #tR {
+  font-size: 1.9rem;
+}
