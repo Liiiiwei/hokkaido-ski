@@ -3,10 +3,10 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/OrbitControls.js";
 // 改了任何一個 js 或 css 檔，就把這裡與 index.html 的 ?v= 一起換新。
 // 不換的話瀏覽器會拿新的 app.js 配快取裡舊的模組，整頁載不起來
-import { buildWorld, DIFF, STEP } from "./world.js?v=20261010d";
-import { createHazards } from "./hazards.js?v=20261010d";
-import { createSkier, BOARDS } from "./skier.js?v=20261010d";
-import { FACTS, COMPARE_ROWS } from "./facts.js?v=20261010d";
+import { buildWorld, DIFF, STEP } from "./world.js?v=20261010e";
+import { createHazards } from "./hazards.js?v=20261010e";
+import { createSkier, BOARDS } from "./skier.js?v=20261010e";
+import { FACTS, COMPARE_ROWS } from "./facts.js?v=20261010e";
 import {
   POINTS,
   comboMult,
@@ -14,16 +14,17 @@ import {
   finalScore,
   rating,
   grade,
-} from "./score.js?v=20261010d";
+} from "./score.js?v=20261010e";
 import {
   initAudio,
   updateAudio,
   quietAudio,
   suspendAudio,
   setMuted,
+  setVolume,
   isMuted,
   sfx,
-} from "./audio.js?v=20261010d";
+} from "./audio.js?v=20261010e";
 
 const $ = (id) => document.getElementById(id);
 const KEYS = ["teine", "kokusai"];
@@ -31,7 +32,7 @@ const lowPower = matchMedia("(pointer: coarse)").matches;
 const fmtTime = (t) =>
   `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, "0")}`;
 const diffTag = (d) => `<i class="d d${d}"></i>${DIFF[d].name}`;
-const buzz = (ms) => navigator.vibrate?.(ms); // 手機震動回饋
+const buzz = (ms) => opt.buzz && navigator.vibrate?.(ms); // 手機震動回饋
 // 系統開了「減少動態效果」：鏡頭晃動縮到三成、不做頓幀
 const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const TRICK_T = 0.62, // 一個特技要轉多久（秒）
@@ -157,7 +158,7 @@ function initGL() {
     antialias: !lowPower,
     powerPreference: "high-performance",
   });
-  renderer.setPixelRatio(Math.min(devicePixelRatio, lowPower ? 1.5 : 2));
+  renderer.setPixelRatio(opt.quality === 1 ? PR_MIN : PR_MAX);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.08;
   renderer.shadowMap.enabled = !lowPower;
@@ -191,6 +192,7 @@ const PR_MAX = Math.min(devicePixelRatio, lowPower ? 1.5 : 2),
   PR_MIN = Math.min(1, PR_MAX);
 const tune = { t: 0, n: 0, good: 0, ups: 0 };
 function tuneQuality(raw) {
+  if (opt.quality) return; // 手動指定畫質就不自動調
   if (raw > 0.25) return; // 切走分頁回來的那一幀不算
   tune.t += raw;
   tune.n++;
@@ -526,8 +528,56 @@ function setPaused(on) {
   if (on) releaseInput();
 }
 
-function renderMute() {
-  $("btnMute").textContent = `音效：${isMuted() ? "關" : "開"}`;
+/* ---------- 設定：存在這台裝置上，暫停頁與雪場頂部都進得來 ---------- */
+const OPTS = [
+  ["vol", "音量", ["關", "小", "中", "大"]],
+  ["buzz", "震動", ["關", "開"]],
+  ["shake", "鏡頭晃動", ["關", "低", "標準"]],
+  ["swap", "轉彎鍵位置", ["左手", "右手"]],
+  ["quality", "畫質", ["自動", "省電", "高"]],
+];
+const VOLS = [0, 0.25, 0.55, 0.9],
+  SHAKE = [0, 0.5, 1];
+const opt = { vol: 2, buzz: 1, shake: 2, swap: 0, quality: 0 };
+try {
+  const saved = JSON.parse(store.get("opt") || "{}");
+  for (const [k, , list] of OPTS)
+    if (Number.isInteger(saved[k]) && saved[k] >= 0 && saved[k] < list.length)
+      opt[k] = saved[k];
+} catch {}
+if (isMuted()) opt.vol = 0; // 沿用先前按過的靜音
+function applyOpts() {
+  setMuted(!opt.vol);
+  if (opt.vol) setVolume(VOLS[opt.vol]);
+  $("hud").classList.toggle("swap", !!opt.swap);
+  const pr = [0, PR_MIN, PR_MAX][opt.quality];
+  if (renderer && pr && pr !== renderer.getPixelRatio()) {
+    renderer.setPixelRatio(pr);
+    resize();
+  }
+  $("optList").innerHTML = OPTS.filter(
+    ([k]) => lowPower || (k !== "buzz" && k !== "swap"), // 桌機沒有震動與觸控鍵
+  )
+    .map(
+      ([k, name, list]) =>
+        `<div class="opt"><span>${name}</span><div class="seg">${list
+          .map(
+            (t, i) =>
+              `<button type="button" data-opt="${k}" data-v="${i}" aria-pressed="${opt[k] === i}">${t}</button>`,
+          )
+          .join("")}</div></div>`,
+    )
+    .join("");
+}
+function setOpt(k, v) {
+  opt[k] = v;
+  store.set("opt", JSON.stringify(opt));
+  applyOpts();
+  if (k === "vol" && v) {
+    initAudio();
+    sfx.ui();
+  }
+  if (k === "buzz" && v) buzz(30);
 }
 
 /* ---------- 飛覽 ---------- */
@@ -558,7 +608,7 @@ function clearGame() {
   G.spray = G.track = null;
   showWarn(null);
   $("hud").classList.remove("hurt");
-  $("tip").classList.remove("show");
+  $("tip").className = "";
 }
 
 // 地面上的一點
@@ -682,22 +732,50 @@ function signTexture(kind) {
   return (texCache[kind] = t);
 }
 
-// 第一次滑才出現的操作提示：[出現的秒數, 文字]
-// 只在第一次滑的開頭出現三句，之後不再打擾
-const TIPS = (
-  lowPower
-    ? [
-        "◀ ▶ 轉彎，從旗門中間穿過",
-        "按住 ◀ 或 ▶ 是刻滑，換邊會加速",
-        "跳起來後，按鈕會變成特技鍵",
-      ]
-    : [
-        "← → 轉彎，↑ 蹲低加速，↓ 煞車",
-        "按住 ← 或 → 是刻滑，換邊會加速",
-        "空白鍵起跳，騰空再按一次做特技",
-      ]
-).map((text, i) => [0.5 + i * 3.6, text]);
-let tipsSeen = !!store.get("tips");
+// 新手教學：一次只教一件事，真的做到了才換下一句。
+// 三件都做過，或已經陪了三局，就不再出現
+const TUTOR = [
+  {
+    text: lowPower
+      ? "按 ◀ ▶ 轉彎，穿過前面的旗門"
+      : "按 ← → 轉彎，穿過前面的旗門",
+    done: () => G.hits > 0,
+  },
+  {
+    text: lowPower ? "按「跳」起跳" : "按空白鍵起跳",
+    done: () => G.jumped,
+  },
+  {
+    text: lowPower ? "騰空時按任一顆鍵做特技" : "騰空時再按一次空白鍵做特技",
+    done: () => G.stat.flips + G.stat.spins > 0,
+  },
+];
+const tutor = { step: 0, runs: 0 };
+{
+  const [step, runs] = (store.get("tut") || "").split("|").map(Number);
+  // 舊版看過提示的人不用重學
+  tutor.step = store.get("tips") ? TUTOR.length : step || 0;
+  tutor.runs = runs || 0;
+}
+const saveTutor = () => store.set("tut", `${tutor.step}|${tutor.runs}`);
+function stepTutor() {
+  const el = $("tip");
+  if (G.t < G.tutAt) return;
+  if (tutor.step >= TUTOR.length) {
+    el.className = "";
+    G.tut = false;
+  } else if (TUTOR[tutor.step].done()) {
+    el.textContent = "✓ 做到了";
+    el.className = "hold ok";
+    G.tutAt = G.t + 1.1;
+    tutor.step++;
+    saveTutor();
+  } else if (G.tutShown !== tutor.step) {
+    G.tutShown = tutor.step;
+    el.textContent = TUTOR[tutor.step].text;
+    el.className = "hold";
+  }
+}
 
 /* ---------- 每局目標：三個小挑戰，只記完成數，不影響分數與排行榜 ---------- */
 const GOAL_POOL = [
@@ -834,10 +912,14 @@ function startSki(quick = false) {
   $("sGain").textContent = "";
   $("sGain").classList.remove("show");
   scoreShown = 0;
-  G.tipI = tipsSeen ? TIPS.length : 0;
-  // 一開滑就記下來：中途離開、重來，或瀏覽器不給存，都不會再跳一次
-  tipsSeen = true;
-  store.set("tips", "1");
+  G.jumped = false;
+  G.tutAt = 0;
+  G.tutShown = -1;
+  G.tut = tutor.step < TUTOR.length && tutor.runs < 3;
+  if (G.tut) {
+    tutor.runs++;
+    saveTutor();
+  }
   G.skier = createSkier(board, { blob: lowPower });
   grp.add(G.skier.group);
 
@@ -1275,7 +1357,7 @@ function follow(pos, target, dt, rate) {
   look.lerp(target, k);
   camera.position.copy(camBase);
   // G.shake 是 0～1 的「衝擊量」，實際晃動取平方：小衝擊幾乎不晃，大衝擊才明顯
-  const amp = G.shake * G.shake * (calm ? 0.3 : 1);
+  const amp = G.shake * G.shake * (calm ? 0.3 : 1) * SHAKE[opt.shake];
   if (amp > 0.0004) {
     camera.position.x += wobble(71, 0) * amp * 0.5;
     camera.position.y += wobble(93, 1) * amp * 0.5;
@@ -1655,17 +1737,12 @@ function present(dt, alpha) {
   if (rush > 0)
     fx.style.transform = `rotate(${Math.floor(clock * 24) * 37}deg) scale(${1.15 - rush * 0.15})`;
 
-  if (G.tipI < TIPS.length && G.t >= TIPS[G.tipI][0]) {
-    const el = $("tip");
-    el.textContent = TIPS[G.tipI++][1];
-    el.classList.remove("show");
-    void el.offsetWidth;
-    el.classList.add("show");
-  }
+  if (G.tut) stepTutor();
 }
 
 // 空白鍵：在地面是跳，騰空時再按一次做特技
 function jump() {
+  G.jumped = true;
   G.air = true;
   G.onRamp = false;
   G.vy = 6.4 * G.board.jump;
@@ -1810,9 +1887,6 @@ function updateHud() {
   const r = G.run,
     f = Math.min(1, G.s / r.L);
   $("hLeft").textContent = Math.max(0, Math.round(r.L - G.s)).toLocaleString();
-  $("hAlt").textContent = Math.round(
-    r.h[Math.min(r.n - 1, Math.round(G.s / STEP))],
-  ).toLocaleString();
   $("hDot").style.left = `${f * 100}%`;
   drawMini();
   if (mode === "fly") {
@@ -1822,6 +1896,8 @@ function updateHud() {
   $("hSpeed").textContent = Math.round(G.v * 3.6);
   if (G.hp !== G.hpShown) {
     G.hpShown = G.hp;
+    // 體力全滿時不用一直盯著，條子淡掉；一掉血就回來
+    $("hud").classList.toggle("hpfull", G.hp >= 100);
     $("hHp").style.width = `${G.hp}%`;
     $("hHp").style.background =
       G.hp > 60 ? "#2fd27a" : G.hp > 30 ? "#ffb400" : "#e0263c";
@@ -2301,11 +2377,13 @@ $("btnPause").onclick = () => setPaused(true);
 $("btnResume").onclick = () => setPaused(false);
 $("btnRestart").onclick = () => startSki(true);
 $("btnPauseQuit").onclick = backToExplore;
-$("btnMute").onclick = () => {
-  setMuted(!isMuted());
-  renderMute();
-};
-renderMute();
+$("btnOpts").onclick = $("btnPauseOpts").onclick = () => show("settings", true);
+$("btnOptsDone").onclick = () => show("settings", false);
+$("optList").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-opt]");
+  if (b) setOpt(b.dataset.opt, +b.dataset.v);
+});
+applyOpts();
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) setPaused(true);
 });
@@ -2334,10 +2412,7 @@ const onKey = (down) => (e) => {
     }
     if (k === "KeyP" && playing) return setPaused(!paused);
     if (k === "KeyR" && (playing || mode === "result")) return startSki(true);
-    if (k === "KeyM") {
-      setMuted(!isMuted());
-      return renderMute();
-    }
+    if (k === "KeyM") return setOpt("vol", opt.vol ? 0 : 2);
   }
   if (paused) return;
   if (e.code === "Space" && playing) {

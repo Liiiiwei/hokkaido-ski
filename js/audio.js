@@ -9,7 +9,7 @@ try {
   muted = localStorage.getItem("mute") === "1";
 } catch {}
 
-const VOL = 0.55;
+let VOL = 0.55;
 // 五聲音階：連段越高，旗門音越往上爬
 const SCALE = [0, 2, 4, 7, 9, 12, 14, 16, 19, 21, 24, 26, 28];
 
@@ -50,6 +50,10 @@ export function initAudio() {
 }
 
 export const isMuted = () => muted;
+export function setVolume(v) {
+  VOL = v;
+  if (master && !muted) master.gain.setTargetAtTime(v, ctx.currentTime, 0.03);
+}
 export function setMuted(v) {
   muted = v;
   try {

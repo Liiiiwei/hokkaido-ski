@@ -21,7 +21,7 @@
       rel="icon"
       href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%276%27 fill=%27%230e1b2c%27/%3E%3Cpath d=%27M4 24 13 9l5 8 3-4 7 11z%27 fill=%27%23fff%27/%3E%3C/svg%3E"
     />
-    <link rel="stylesheet" href="css/style.css?v=20261010d" />
+    <link rel="stylesheet" href="css/style.css?v=20261010e" />
     <script type="importmap">
       {
         "imports": {
@@ -115,6 +115,7 @@
       <header class="bar">
         <button id="btnBack" class="ghost">← 返回</button>
         <nav class="tabs" id="tabs"></nav>
+        <button id="btnOpts" class="ghost">設定</button>
       </header>
 
       <aside id="panel">
@@ -170,7 +171,6 @@
           <b id="hSpeed">0</b><span id="hUnit">km/h</span>
         </div>
         <div class="hud-side">
-          <div><span>海拔</span><b id="hAlt">0</b> m</div>
           <div><span>剩餘</span><b id="hLeft">0</b> m</div>
           <div class="gates"><span>旗門</span><b id="hGate">0</b></div>
           <div class="score"><span>分數</span><b id="hScore">0</b></div>
@@ -254,10 +254,20 @@
           <div class="actions col">
             <button id="btnResume" class="solid">繼續滑</button>
             <button id="btnRestart" class="ghost dark">重新開始</button>
-            <button id="btnMute" class="ghost dark">音效：開</button>
+            <button id="btnPauseOpts" class="ghost dark">設定</button>
             <button id="btnPauseQuit" class="ghost dark">結束，回到雪場</button>
           </div>
           <p class="keys">Esc 或 P 暫停／繼續　R 重新開始　M 音效開關</p>
+        </div>
+      </div>
+
+      <div id="settings" class="sheet" hidden>
+        <div class="sheet-in">
+          <p class="eyebrow">設定</p>
+          <div id="optList"></div>
+          <div class="actions">
+            <button id="btnOptsDone" class="solid">完成</button>
+          </div>
         </div>
       </div>
 
@@ -279,6 +289,6 @@
       </div>
     </div>
 
-    <script type="module" src="js/app.js?v=20261010d"></script>
+    <script type="module" src="js/app.js?v=20261010e"></script>
   </body>
 </html>

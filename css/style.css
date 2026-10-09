@@ -440,6 +440,8 @@ footer {
   background: var(--ink);
   color: #fff;
   overflow: hidden;
+  /* 速度線圖層比畫面大，clip 讓容器連程式也捲不動；不支援的瀏覽器退回 hidden */
+  overflow: clip;
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
@@ -2090,6 +2092,84 @@ h1 {
 .save input:disabled {
   opacity: 0.55;
   cursor: wait;
+}
+
+/* 設定：一列一個項目，選項排成一排可點的格子 */
+#settings {
+  z-index: 8;
+}
+.bar #btnOpts {
+  margin-left: auto;
+}
+.opt {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line);
+  font-weight: 700;
+  font-size: 0.92rem;
+}
+.seg {
+  display: flex;
+  border: 1.5px solid var(--ink);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.seg button {
+  min-width: 46px;
+  min-height: 40px;
+  padding: 0 10px;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: 700 0.85rem var(--sans);
+  cursor: pointer;
+}
+.seg button + button {
+  border-left: 1.5px solid var(--ink);
+}
+.seg button[aria-pressed="true"] {
+  background: var(--ink);
+  color: #fff;
+}
+
+/* 體力全滿時條子淡掉，掉血立刻回來 */
+.hud-hp {
+  transition: opacity 0.2s;
+}
+#hud.hpfull .hud-hp {
+  opacity: 0;
+  transition: opacity 0.8s 2s;
+}
+
+/* 新手教學：這一句會停在畫面上，做到了才換下一句 */
+#tip.hold {
+  opacity: 1;
+}
+#tip.ok {
+  background: #1f9d55;
+  border-color: #fff;
+}
+
+/* 手機：瀏海與圓角避開左右兩側；蹲與煞車加大好按；轉彎鍵可以換到右手 */
+.hud-top {
+  padding-left: max(16px, env(safe-area-inset-left));
+  padding-right: max(16px, env(safe-area-inset-right));
+}
+.touch {
+  padding-left: max(14px, env(safe-area-inset-left));
+  padding-right: max(14px, env(safe-area-inset-right));
+}
+.touch #tT,
+.touch #tB {
+  width: 72px;
+  height: 72px;
+}
+#hud.swap .touch,
+#hud.swap .touch > div:last-child {
+  flex-direction: row-reverse;
 }
 
 /* 每局目標：倒數時在畫面下方，暫停與結算各列一次 */
