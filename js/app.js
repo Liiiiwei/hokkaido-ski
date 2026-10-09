@@ -3,10 +3,10 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/OrbitControls.js";
 // 改了任何一個 js 或 css 檔，就把這裡與 index.html 的 ?v= 一起換新。
 // 不換的話瀏覽器會拿新的 app.js 配快取裡舊的模組，整頁載不起來
-import { buildWorld, DIFF, STEP } from "./world.js?v=20261009d";
-import { createHazards } from "./hazards.js?v=20261009d";
-import { createSkier, BOARDS } from "./skier.js?v=20261009d";
-import { FACTS, COMPARE_ROWS } from "./facts.js?v=20261009d";
+import { buildWorld, DIFF, STEP } from "./world.js?v=20261009e";
+import { createHazards } from "./hazards.js?v=20261009e";
+import { createSkier, BOARDS } from "./skier.js?v=20261009e";
+import { FACTS, COMPARE_ROWS } from "./facts.js?v=20261009e";
 import {
   POINTS,
   comboMult,
@@ -14,7 +14,7 @@ import {
   finalScore,
   rating,
   grade,
-} from "./score.js?v=20261009d";
+} from "./score.js?v=20261009e";
 import {
   initAudio,
   updateAudio,
@@ -23,7 +23,7 @@ import {
   setMuted,
   isMuted,
   sfx,
-} from "./audio.js?v=20261009d";
+} from "./audio.js?v=20261009e";
 
 const $ = (id) => document.getElementById(id);
 const KEYS = ["teine", "kokusai"];
@@ -1722,7 +1722,7 @@ function finish(failed = false) {
   $("rSave").hidden = true;
   $("rSaveMsg").hidden = true;
   $("rWho").value = store.get("name") || "";
-  renderBoard(r);
+  loadBoard(r);
   G.res = {
     total: fin.total,
     grade: gr,
@@ -1769,9 +1769,13 @@ function stepResult(dt) {
   }
 }
 
-/* ---------- 排行榜：每條雪道各一份，存在這台裝置的瀏覽器裡 ---------- */
+/* ---------- 排行榜：每條雪道各一份，所有人共用 ---------- */
+// 共用排行榜的接口（Google 試算表上的網頁應用程式，程式在 backend/）。
+// 留空就退回只存在這台裝置的瀏覽器裡
+const BOARD_API =
+  "https://script.google.com/macros/s/AKfycbzEUvRW4Wm31iOML5gbqcFMLtdCaCg39SXg7EumldmplSR0ThlbfLMXK2pP5DWOScQi/exec";
 const boardKey = (run) => `board:${key}:${run.id}`;
-function readBoard(run) {
+function readLocalBoard(run) {
   try {
     const list = JSON.parse(store.get(boardKey(run)) || "[]");
     return Array.isArray(list) ? list : [];
@@ -1779,17 +1783,27 @@ function readBoard(run) {
     return [];
   }
 }
-// 列出前五名；自己剛記的那筆不在前五也補在最後一列
-function renderBoard(run, mine) {
-  const list = readBoard(run),
-    ol = $("rBoard");
-  ol.textContent = "";
-  if (!list.length) {
-    const li = document.createElement("li");
-    li.className = "empty";
-    li.textContent = "還沒有人留下紀錄，當第一個";
-    return ol.append(li);
+function boardNote(text, retry) {
+  const ol = $("rBoard"),
+    li = document.createElement("li");
+  li.className = "empty";
+  li.textContent = text;
+  if (retry) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "link";
+    btn.textContent = "重試";
+    btn.onclick = retry;
+    li.append(" ", btn);
   }
+  ol.textContent = "";
+  ol.append(li);
+}
+// 列出前五名；自己剛記的那筆不在前五也補在最後一列
+function showBoard(list, mine) {
+  const ol = $("rBoard");
+  if (!list.length) return boardNote("還沒有人留下紀錄，當第一個");
+  ol.textContent = "";
   const at = mine ? list.findIndex((e) => e.at === mine) : -1,
     show = list.slice(0, 5).map((e, i) => [i, e]);
   if (at >= 5) show.push([at, list[at]]);
@@ -1811,12 +1825,33 @@ function renderBoard(run, mine) {
     ol.append(li);
   }
 }
-function saveScore(e) {
+// 每次讀取或寫入都領一個號碼：回來時號碼不是最新的，代表畫面已經換成別趟，直接丟掉
+let boardTicket = 0;
+async function loadBoard(run) {
+  const ticket = ++boardTicket;
+  if (!BOARD_API) return showBoard(readLocalBoard(run));
+  boardNote("讀取排行榜…");
+  try {
+    const res = await fetch(
+        `${BOARD_API}?run=${encodeURIComponent(`${key}:${run.id}`)}`,
+      ),
+      d = await res.json();
+    if (ticket !== boardTicket) return;
+    if (!d.ok) throw new Error(d.error);
+    showBoard(d.list);
+  } catch {
+    if (ticket === boardTicket)
+      boardNote("排行榜暫時讀不到。", () => loadBoard(run));
+  }
+}
+async function saveScore(e) {
   e.preventDefault();
   const res = G.res,
+    run = G.run,
     msg = $("rSaveMsg"),
+    btn = $("btnSave"),
     name = $("rWho").value.trim().slice(0, 12);
-  if (!res || !res.done || res.saved) return;
+  if (!res || !res.done || res.saved || res.saving) return;
   const say = (text, bad) => {
     msg.textContent = text;
     msg.classList.toggle("bad", !!bad);
@@ -1827,22 +1862,62 @@ function saveScore(e) {
     return $("rWho").focus();
   }
   const entry = {
-      n: name,
-      s: res.total,
-      g: res.grade,
-      t: res.time,
-      at: Date.now(),
-    },
-    list = [...readBoard(G.run), entry].sort((a, b) => b.s - a.s).slice(0, 20);
-  if (!store.set(boardKey(G.run), JSON.stringify(list)))
-    return say("這個瀏覽器不允許儲存，紀錄沒有留下", true);
-  store.set("name", name);
-  res.saved = true;
-  $("rSave").hidden = true;
-  const rank = list.indexOf(entry) + 1;
-  say(rank ? `已記錄，排第 ${rank} 名` : "已記錄，這次沒有擠進前 20 名");
-  renderBoard(G.run, entry.at);
-  sfx.ui();
+    n: name,
+    s: res.total,
+    g: res.grade,
+    t: res.time,
+    at: Date.now(),
+  };
+  const done = (list, at, rank) => {
+    store.set("name", name);
+    res.saved = true;
+    $("rSave").hidden = true;
+    say(`已記錄，排第 ${rank} 名`);
+    showBoard(list, at);
+    sfx.ui();
+  };
+  if (!BOARD_API) {
+    const list = [...readLocalBoard(run), entry]
+      .sort((a, b) => b.s - a.s)
+      .slice(0, 20);
+    if (!store.set(boardKey(run), JSON.stringify(list)))
+      return say("這個瀏覽器不允許儲存，紀錄沒有留下", true);
+    const rank = list.indexOf(entry) + 1;
+    if (!rank) {
+      res.saved = true;
+      $("rSave").hidden = true;
+      return say("已記錄，這次沒有擠進前 20 名");
+    }
+    return done(list, entry.at, rank);
+  }
+  const ticket = ++boardTicket;
+  res.saving = true;
+  btn.disabled = $("rWho").disabled = true;
+  btn.textContent = "記錄中…";
+  msg.hidden = true;
+  try {
+    // 用純文字送出，瀏覽器才不會先發一次預檢請求（試算表的接口不回應預檢）
+    const r = await fetch(BOARD_API, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({
+          run: `${key}:${run.id}`,
+          name,
+          score: entry.s,
+          grade: entry.g,
+          time: entry.t,
+        }),
+      }),
+      d = await r.json();
+    if (!d.ok) throw new Error(d.error);
+    if (ticket === boardTicket && G.res === res) done(d.list, d.at, d.rank);
+  } catch {
+    if (G.res === res) say("沒有記錄成功，檢查網路後再按一次", true);
+  } finally {
+    res.saving = false;
+    btn.disabled = $("rWho").disabled = false;
+    btn.textContent = "記錄分數";
+  }
 }
 
 function backToExplore() {

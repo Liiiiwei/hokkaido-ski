@@ -1938,3 +1938,18 @@ h1 {
 .board .time {
   text-align: right;
 }
+.board button.link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--flame);
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.save button:disabled,
+.save input:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
