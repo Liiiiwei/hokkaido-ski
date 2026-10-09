@@ -3,10 +3,10 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/OrbitControls.js";
 // 改了任何一個 js 或 css 檔，就把這裡與 index.html 的 ?v= 一起換新。
 // 不換的話瀏覽器會拿新的 app.js 配快取裡舊的模組，整頁載不起來
-import { buildWorld, DIFF, STEP } from "./world.js?v=20261010g";
-import { createHazards } from "./hazards.js?v=20261010g";
-import { createSkier, BOARDS } from "./skier.js?v=20261010g";
-import { FACTS, COMPARE_ROWS } from "./facts.js?v=20261010g";
+import { buildWorld, DIFF, STEP } from "./world.js?v=20261010k";
+import { createHazards } from "./hazards.js?v=20261010k";
+import { createSkier, BOARDS } from "./skier.js?v=20261010k";
+import { FACTS, COMPARE_ROWS } from "./facts.js?v=20261010k";
 import {
   POINTS,
   comboMult,
@@ -14,7 +14,7 @@ import {
   finalScore,
   rating,
   grade,
-} from "./score.js?v=20261010g";
+} from "./score.js?v=20261010k";
 import {
   initAudio,
   updateAudio,
@@ -24,7 +24,7 @@ import {
   setVolume,
   isMuted,
   sfx,
-} from "./audio.js?v=20261010g";
+} from "./audio.js?v=20261010k";
 
 const $ = (id) => document.getElementById(id);
 const KEYS = ["teine", "kokusai"];
@@ -2341,6 +2341,7 @@ function loop(now) {
         : look,
   );
   world.update(clock, camera);
+  debugCam?.(camera); // 除錯時可以把鏡頭搬去看模型近照
   renderer.render(world.scene, camera);
 }
 
@@ -2495,6 +2496,13 @@ $("gear").addEventListener("click", (e) => {
   renderGear();
 });
 
+let debugCam = null;
 // 除錯用：網址加上 #debug 才會掛出狀態
 if (location.hash === "#debug")
-  window.__ski = { G, input, world: () => world, gl: () => renderer };
+  window.__ski = {
+    G,
+    input,
+    world: () => world,
+    gl: () => renderer,
+    cam: (fn) => (debugCam = fn),
+  };

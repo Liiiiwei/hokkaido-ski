@@ -10,8 +10,9 @@ export const HAZARDS = {
 const WARN_AT = 150, // 進入這個距離開始預警、現身
   GO_AT = 90; // 進入這個距離才開始動
 
+// 造型跟人物同一套：圓潤、平滑曲面、不反光的布偶質感
 const lam = (color) =>
-  new THREE.MeshLambertMaterial({ color, flatShading: true });
+  new THREE.MeshStandardMaterial({ color, roughness: 0.9 });
 const box = (w, h, d, mat, x, y, z) => {
   const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
   m.position.set(x, y, z);
@@ -20,14 +21,21 @@ const box = (w, h, d, mat, x, y, z) => {
 
 const damp = (a, b, rate, dt) => a + (b - a) * (1 - Math.exp(-rate * dt));
 const blob = (r, mat, x, y, z, sx = 1, sy = 1, sz = 1) => {
-  const m = new THREE.Mesh(new THREE.IcosahedronGeometry(r, 1), mat);
+  const m = new THREE.Mesh(new THREE.SphereGeometry(r, 18, 12), mat);
   m.position.set(x, y, z);
   m.scale.set(sx, sy, sz);
   return m;
 };
-// 從關節往下垂的一節肢體
+// 圓錐：耳朵、角、爪子、牙齒、毛尖
+const spike = (r, h, mat, x, y, z, seg = 10) => {
+  const m = new THREE.Mesh(new THREE.ConeGeometry(r, h, seg), mat);
+  m.position.set(x, y, z);
+  return m;
+};
+// 從關節往下垂的一節肢體：兩端是圓的，彎起來關節不會露出斷面。
+// 用一顆膠囊做完，不拆成圓柱加兩顆球，少兩次繪製
 const limb = (rTop, rBot, len, mat) => {
-  const geo = new THREE.CylinderGeometry(rTop, rBot, len, 6);
+  const geo = new THREE.CapsuleGeometry((rTop + rBot) / 2, len, 4, 12);
   geo.translate(0, -len / 2, 0);
   return new THREE.Mesh(geo, mat);
 };
@@ -40,34 +48,61 @@ const shadowed = (g) => {
 
 function makeBall() {
   const g = new THREE.Group(),
-    geo = new THREE.IcosahedronGeometry(1.5, 2),
+    geo = new THREE.SphereGeometry(1.5, 32, 22),
     pos = geo.attributes.position;
-  // 表面捏得坑坑疤疤，滾起來才看得出在轉
+  // 表面捏出起伏，像一路滾下來越裹越厚的雪
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i),
       y = pos.getY(i),
       z = pos.getZ(i),
       k =
         1 +
-        Math.sin(x * 3.1 + y * 1.7) * 0.05 +
-        Math.sin(z * 4.3 - x * 2.2) * 0.04;
+        Math.sin(x * 3.1 + y * 1.7) * 0.045 +
+        Math.sin(z * 4.3 - x * 2.2) * 0.035 +
+        Math.sin(y * 7.1 + z * 5.3) * 0.015;
     pos.setXYZ(i, x * k, y * k, z * k);
   }
   geo.computeVertexNormals();
-  const core = new THREE.Mesh(geo, lam("#cfdcee"));
-  for (let i = 0; i < 7; i++) {
-    const a = i * 2.4,
-      b = Math.sin(i * 1.9) * 1.1,
-      r = 1.42 * Math.cos(b);
-    core.add(
-      blob(
-        0.3 + (i % 3) * 0.09,
-        lam(i % 2 ? "#aebfd6" : "#e6eef8"),
-        Math.cos(a) * r,
-        Math.sin(b) * 1.42,
-        Math.sin(a) * r,
-      ),
+  const snow = new THREE.MeshStandardMaterial({
+      color: "#eef4fb",
+      roughness: 0.95,
+    }),
+    shade = lam("#d3dfee"),
+    rock = lam("#5d6772"),
+    wood = lam("#6b4a33");
+  const core = new THREE.Mesh(geo, snow);
+  // 球面上均勻撒點：黃金角螺旋
+  const on = (i, n, r) => {
+    const y = 1 - (2 * (i + 0.5)) / n,
+      k = Math.sqrt(1 - y * y),
+      a = i * 2.399963;
+    return [Math.cos(a) * k * r, y * r, Math.sin(a) * k * r];
+  };
+  // 一路裹上來的雪塊：顏色只比底色深一點，不搶眼
+  for (let i = 0; i < 14; i++) {
+    const lump = blob(
+      0.3 + (i % 4) * 0.07,
+      i % 3 ? snow : shade,
+      ...on(i, 14, 1.36),
+      1,
+      1,
+      0.55,
     );
+    lump.lookAt(0, 0, 0);
+    core.add(lump);
+  }
+  // 捲進來的小石頭與斷枝：深色的點在轉，才看得出球在滾
+  for (let i = 0; i < 7; i++)
+    core.add(blob(0.1 + (i % 3) * 0.04, rock, ...on(i * 2 + 1, 15, 1.47)));
+  for (let i = 0; i < 4; i++) {
+    const twig = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.03, 0.045, 0.7, 6),
+      wood,
+    );
+    twig.position.set(...on(i * 3 + 2, 13, 1.5));
+    twig.lookAt(0, 0, 0);
+    twig.rotateX(1.1 + i * 0.3);
+    core.add(twig);
   }
   core.position.y = 1.5;
   g.add(core);
@@ -81,6 +116,8 @@ function makeWolf() {
     back = lam("#4a525d"),
     pale = lam("#c9d1da"),
     dark = lam("#2a3038"),
+    pink = lam("#c98f8a"),
+    tooth = lam("#f6f3ea"),
     eye = new THREE.MeshBasicMaterial({ color: "#ffd23c" });
   const body = new THREE.Group();
   body.add(blob(0.36, fur, 0, 0.95, 0.32, 1, 1.05, 1.35)); // 胸
@@ -96,34 +133,60 @@ function makeWolf() {
   head.position.set(0, 1.26, 0.74);
   head.add(blob(0.27, fur, 0, 0.08, 0.12, 1, 0.95, 1.1));
   const snout = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.07, 0.15, 0.42, 5),
+    new THREE.CylinderGeometry(0.075, 0.15, 0.42, 14),
     pale,
   );
   snout.rotation.x = Math.PI / 2;
   snout.position.set(0, 0.02, 0.48);
   head.add(snout);
-  head.add(blob(0.055, dark, 0, 0.05, 0.7));
-  const jaw = box(0.15, 0.045, 0.3, dark, 0, 0, 0.15);
+  head.add(blob(0.078, pale, 0, 0.02, 0.69)); // 鼻頭收圓
+  head.add(blob(0.06, dark, 0, 0.06, 0.74, 1.15, 0.85, 1)); // 鼻子
+  head.add(blob(0.2, back, 0, 0.2, 0.02, 1, 0.7, 1.1)); // 額頭到後腦的深色毛
   const jawPivot = new THREE.Group();
   jawPivot.position.set(0, -0.08, 0.28);
-  jawPivot.add(jaw);
+  jawPivot.add(blob(0.09, dark, 0, 0, 0.15, 0.85, 0.3, 1.7)); // 下顎
+  // 上排兩顆犬齒，張嘴才看得清楚
+  for (const x of [-0.055, 0.055]) {
+    const fang = spike(0.022, 0.09, tooth, x, -0.08, 0.55, 6);
+    fang.rotation.x = Math.PI;
+    head.add(fang);
+    jawPivot.add(spike(0.018, 0.06, tooth, x * 0.8, 0.045, 0.26, 6));
+  }
   head.add(jawPivot);
   for (const x of [-0.15, 0.15]) {
-    const ear = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.28, 4), back);
-    ear.position.set(x, 0.38, 0.02);
+    const ear = spike(0.105, 0.3, back, x, 0.38, 0.02);
     ear.rotation.z = -x * 1.2;
+    const inner = spike(0.06, 0.2, pink, 0, -0.02, 0.045);
+    ear.add(inner);
     head.add(ear);
-    head.add(box(0.07, 0.06, 0.04, eye, x * 0.85, 0.15, 0.36));
-    head.add(box(0.11, 0.03, 0.05, dark, x * 0.85, 0.2, 0.36)); // 壓低的眉骨，看起來兇
+    // 臉頰兩側往外翹的毛
+    const cheek = spike(0.12, 0.3, pale, x * 1.5, -0.02, 0.08);
+    cheek.rotation.z = Math.sign(x) * -2.0;
+    head.add(cheek);
+    head.add(blob(0.048, eye, x * 0.85, 0.15, 0.34, 1.15, 0.85, 0.7));
+    head.add(blob(0.022, dark, x * 0.85, 0.15, 0.375, 0.6, 1.2, 0.5)); // 直豎的瞳孔
+    const brow = box(0.13, 0.035, 0.07, back, x * 0.85, 0.21, 0.35); // 壓低的眉骨，看起來兇
+    brow.rotation.z = Math.sign(x) * 0.35;
+    head.add(brow);
   }
   body.add(head);
+  // 脖子到胸口一圈蓬毛
+  for (let i = 0; i < 5; i++) {
+    const a = (i - 2) * 0.55,
+      tuft = spike(0.13, 0.34, pale, Math.sin(a) * 0.26, 0.98, 0.66);
+    tuft.rotation.set(2.3, 0, -a * 0.9);
+    body.add(tuft);
+  }
 
   const tail = new THREE.Group();
   tail.position.set(0, 1.0, -0.8);
-  tail.add(limb(0.1, 0.13, 0.42, fur));
+  tail.add(limb(0.1, 0.16, 0.42, fur));
   const tip = new THREE.Group();
   tip.position.y = -0.4;
-  tip.add(limb(0.13, 0.03, 0.36, pale));
+  tip.add(limb(0.16, 0.12, 0.2, fur));
+  const end = spike(0.12, 0.3, pale, 0, -0.34, 0);
+  end.rotation.x = Math.PI;
+  tip.add(end);
   tail.add(tip);
   body.add(tail);
   g.add(body);
@@ -140,13 +203,13 @@ function makeWolf() {
     hip.position.set(x, 0.74, z);
     hip.add(limb(0.1, 0.07, 0.38, fur));
     knee.position.y = -0.36;
-    knee.add(limb(0.065, 0.05, 0.34, fur));
-    knee.add(box(0.13, 0.07, 0.19, pale, 0, -0.35, 0.04));
+    knee.add(limb(0.065, 0.055, 0.34, fur));
+    knee.add(blob(0.085, pale, 0, -0.35, 0.05, 1, 0.6, 1.4)); // 腳掌
     hip.add(knee);
     g.add(hip);
     legs.push({ hip, knee, front: z > 0, side: Math.sign(x) });
   }
-  g.scale.setScalar(1.9);
+  g.scale.setScalar(2.2); // 放大一點，遠遠就認得出是狼
   g.userData = {
     body,
     head,
@@ -167,6 +230,10 @@ function makeYeti() {
     skin = lam("#3d5a8a"),
     dark = lam("#1b2634"),
     white = lam("#f4f8fc"),
+    horny = new THREE.MeshStandardMaterial({
+      color: "#2f466e",
+      roughness: 0.5,
+    }),
     glow = new THREE.MeshBasicMaterial({ color: "#ffe36b" });
   const body = new THREE.Group();
   body.add(blob(1.15, fur, 0, 1.55, 0, 1, 1.2, 0.9));
@@ -177,23 +244,55 @@ function makeYeti() {
   head.position.set(0, 3.0, 0.05);
   head.add(blob(0.72, fur, 0, 0, 0));
   head.add(blob(0.5, skin, 0, -0.05, 0.37, 1, 0.9, 0.5));
-  head.add(box(0.8, 0.14, 0.2, shade, 0, 0.2, 0.55)); // 眉骨
+  head.add(blob(0.2, shade, 0, 0.22, 0.52, 2.1, 0.42, 0.7)); // 眉骨
   for (const x of [-0.2, 0.2]) {
-    head.add(blob(0.09, glow, x, 0.06, 0.63));
-    const horn = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.46, 5), skin);
-    horn.position.set(x * 2.3, 0.62, -0.05);
+    head.add(blob(0.13, dark, x, 0.06, 0.56, 1, 0.8, 0.6)); // 眼窩
+    head.add(blob(0.085, glow, x, 0.06, 0.63));
+    const horn = spike(0.14, 0.52, horny, x * 2.3, 0.62, -0.05, 12);
     horn.rotation.z = -x * 1.6;
     head.add(horn);
+    head.add(blob(0.16, shade, x * 2.3, 0.44, -0.05)); // 角根的毛
+    head.add(blob(0.07, dark, x * 0.45, -0.08, 0.63, 1, 0.7, 0.5)); // 鼻孔
   }
-  const mouth = box(0.42, 0.16, 0.06, dark, 0, -0.28, 0.6);
+  // 頭頂一撮亂毛
+  for (let i = -1; i <= 1; i++) {
+    const tuft = spike(0.16, 0.42, fur, i * 0.2, 0.72, 0.05);
+    tuft.rotation.z = -i * 0.45;
+    head.add(tuft);
+  }
+  const mouth = blob(0.08, dark, 0, -0.28, 0.58, 2.7, 1, 0.6);
   head.add(mouth);
-  for (const x of [-0.13, 0.13]) {
-    const fang = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.13, 4), white);
-    fang.position.set(x, -0.25, 0.64);
+  for (const x of [-0.14, -0.05, 0.05, 0.14]) {
+    const big = Math.abs(x) > 0.1,
+      fang = spike(
+        big ? 0.045 : 0.03,
+        big ? 0.15 : 0.08,
+        white,
+        x,
+        -0.24,
+        0.65,
+        8,
+      );
     fang.rotation.x = Math.PI;
     head.add(fang);
   }
   body.add(head);
+  // 身體輪廓外翹的毛：肩膀、腰側、背後，剪影才不會是一顆光滑的球
+  for (let i = 0; i < 10; i++) {
+    const a = (i / 10) * Math.PI * 2,
+      y = 0.9 + (i % 3) * 0.55,
+      rad = 1.0 - Math.abs(y - 1.55) * 0.25,
+      tuft = spike(
+        0.2,
+        0.5,
+        i % 2 ? fur : shade,
+        Math.cos(a) * rad,
+        y,
+        Math.sin(a) * rad * 0.85,
+      );
+    tuft.rotation.set(Math.sin(a) * 1.9, 0, -Math.cos(a) * 1.9);
+    body.add(tuft);
+  }
 
   const arms = [];
   for (const side of [-1, 1]) {
@@ -201,33 +300,41 @@ function makeYeti() {
     const sh = new THREE.Group(),
       el = new THREE.Group(),
       upper = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.28, 0.34, 0.9, 6),
+        new THREE.CylinderGeometry(0.28, 0.34, 0.9, 14),
         fur,
       ),
       fore = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.24, 0.28, 0.8, 6),
+        new THREE.CylinderGeometry(0.25, 0.28, 0.8, 14),
         fur,
       );
     sh.position.set(side * 1.05, 2.3, 0);
     upper.position.y = 0.42;
     el.position.y = 0.85;
     fore.position.y = 0.38;
-    el.add(fore, blob(0.36, skin, 0, 0.88, 0));
+    sh.add(blob(0.36, fur, 0, 0, 0)); // 肩關節
+    el.add(fore, blob(0.3, fur, 0, 0, 0), blob(0.36, skin, 0, 0.88, 0));
+    // 手肘往外翹的毛
+    const elbow = spike(0.17, 0.42, shade, side * 0.22, 0.05, -0.12);
+    elbow.rotation.z = -side * 1.9;
+    el.add(elbow);
     for (const k of [-1, 0, 1]) {
-      const claw = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.24, 4), white);
-      claw.position.set(k * 0.17, 1.2, 0.08);
+      const claw = spike(0.065, 0.3, white, k * 0.17, 1.22, 0.1, 8);
+      claw.rotation.x = 0.35; // 爪尖往前勾
+      claw.rotation.z = -k * 0.25;
       el.add(claw);
     }
     sh.add(upper, el);
     body.add(sh);
     arms.push({ sh, el, side });
     const leg = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.36, 0.42, 0.8, 6),
+      new THREE.CylinderGeometry(0.38, 0.42, 0.8, 14),
       fur,
     );
     leg.position.set(side * 0.5, 0.4, 0);
     g.add(leg);
     g.add(blob(0.42, skin, side * 0.5, 0.12, 0.22, 1, 0.4, 1.4)); // 腳掌
+    for (const k of [-1, 0, 1])
+      g.add(blob(0.13, skin, side * 0.5 + k * 0.22, 0.12, 0.72, 1, 0.8, 1)); // 腳趾
   }
   g.add(body);
   g.userData = { body, head, mouth, arms, lunge: 0 };

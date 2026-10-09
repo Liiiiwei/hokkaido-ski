@@ -126,15 +126,19 @@ function widths(pts, halfW) {
 function mergeColored(parts) {
   const pos = [],
     col = [],
+    nor = [],
     c = new THREE.Color();
   for (const [geo, color] of parts) {
     const g = geo.index ? geo.toNonIndexed() : geo,
-      p = g.attributes.position;
+      p = g.attributes.position,
+      n = g.attributes.normal;
     for (let i = 0; i < p.count; i++) {
       const x = p.getX(i),
         y = p.getY(i),
         z = p.getZ(i);
       pos.push(x, y, z);
+      // 沿用零件原本的法線：圓錐、圓柱的曲面才會是平滑的，不會一片一片
+      nor.push(n.getX(i), n.getY(i), n.getZ(i));
       c.set(typeof color === "function" ? color(x, y, z) : color);
       col.push(c.r, c.g, c.b);
     }
@@ -142,8 +146,32 @@ function mergeColored(parts) {
   const out = new THREE.BufferGeometry();
   out.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
   out.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
-  out.computeVertexNormals();
+  out.setAttribute("normal", new THREE.Float32BufferAttribute(nor, 3));
   return out;
+}
+// 沒有底的圓錐，一個側面只用一個三角形。
+// 內建的圓錐在尖端會多出一倍面積為零的三角形，樹有上萬棵，省下來很可觀
+function coneGeo(r, h, seg) {
+  const pos = [],
+    nor = [],
+    k = Math.hypot(r, h),
+    ny = r / k,
+    nr = h / k;
+  for (let i = 0; i < seg; i++) {
+    const a0 = (i / seg) * Math.PI * 2,
+      a1 = ((i + 1) / seg) * Math.PI * 2,
+      am = (a0 + a1) / 2;
+    pos.push(0, h / 2, 0);
+    nor.push(Math.sin(am) * nr, ny, Math.cos(am) * nr);
+    for (const a of [a0, a1]) {
+      pos.push(Math.sin(a) * r, -h / 2, Math.cos(a) * r);
+      nor.push(Math.sin(a) * nr, ny, Math.cos(a) * nr);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute("normal", new THREE.Float32BufferAttribute(nor, 3));
+  return g;
 }
 const boxAt = (w, h, d, x, y, z) =>
   new THREE.BoxGeometry(w, h, d).translate(x, y, z);
@@ -544,29 +572,41 @@ export function buildWorld(data, { lowPower = false } = {}) {
     return m;
   }
 
-  // 樹：三層帶積雪的針葉樹為主，混一些落葉後的白樺
-  const green = new THREE.Color("#1c4636"),
-    deep = new THREE.Color("#14382c"),
-    white = new THREE.Color("#eef4f7");
+  // 樹：四層針葉樹為主，混一些落葉後的白樺。
+  // 每一層是一圈綠色枝葉，上面再蓋一頂比枝葉略寬的雪帽，雪線是清楚的一道邊，不是糊掉的漸層
+  const green = new THREE.Color("#2b4f40"),
+    deep = new THREE.Color("#1a362b"),
+    white = new THREE.Color("#f6f9fc"),
+    frost = new THREE.Color("#dbe6f0");
+  const SEG = 9;
   const tier = (r, h, base, turn) => {
-    const geo = new THREE.ConeGeometry(r, h, 7, 2, true);
-    geo.rotateY(turn);
-    geo.translate(0, base + h / 2, 0);
-    // 每一層上半截積雪，下緣露出深色枝葉
+    const skirt = coneGeo(r, h, SEG);
+    skirt.rotateY(turn);
+    skirt.translate(0, base + h / 2, 0);
+    // 雪帽從這一層下緣往上一點開始，只露出一圈深色枝葉，底緣比枝葉寬一點，像積雪壓出來的簷
+    const capH = h * 0.95,
+      capBase = base + h * 0.15,
+      cap = coneGeo(r * 0.9, capH, SEG);
+    cap.rotateY(turn + 0.35);
+    cap.translate(0, capBase + capH / 2, 0);
     return [
-      geo,
-      (x, y) =>
-        (y - base) / h > 0.42 ? white : (y - base) / h > 0.01 ? green : deep,
+      [skirt, (x, y) => (y - base < h * 0.5 ? deep : green)],
+      [cap, (x, y) => (y - capBase < capH * 0.5 ? frost : white)],
     ];
   };
   const conifer = mergeColored([
     [
-      new THREE.CylinderGeometry(0.4, 0.6, 3, 5, 1, true).translate(0, 1.5, 0),
-      "#4b3a2c",
+      new THREE.CylinderGeometry(0.38, 0.55, 3, 6, 1, true).translate(
+        0,
+        1.5,
+        0,
+      ),
+      "#5c4535",
     ],
-    tier(3.7, 5.2, 1.8, 0),
-    tier(2.9, 4.6, 4.9, 0.5),
-    tier(1.9, 4.2, 7.9, 1.1),
+    ...tier(3.9, 4.6, 1.6, 0),
+    ...tier(3.1, 4.2, 4.3, 0.5),
+    ...tier(2.3, 3.8, 6.8, 1.1),
+    ...tier(1.5, 3.4, 9.0, 1.7),
   ]);
   const twig = (len, y, yaw, tilt) => {
     const geo = new THREE.CylinderGeometry(0.035, 0.09, len, 4, 1, true);
