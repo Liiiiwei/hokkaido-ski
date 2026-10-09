@@ -3,10 +3,10 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/OrbitControls.js";
 // 改了任何一個 js 或 css 檔，就把這裡與 index.html 的 ?v= 一起換新。
 // 不換的話瀏覽器會拿新的 app.js 配快取裡舊的模組，整頁載不起來
-import { buildWorld, DIFF, STEP } from "./world.js?v=20261010f";
-import { createHazards } from "./hazards.js?v=20261010f";
-import { createSkier, BOARDS } from "./skier.js?v=20261010f";
-import { FACTS, COMPARE_ROWS } from "./facts.js?v=20261010f";
+import { buildWorld, DIFF, STEP } from "./world.js?v=20261010g";
+import { createHazards } from "./hazards.js?v=20261010g";
+import { createSkier, BOARDS } from "./skier.js?v=20261010g";
+import { FACTS, COMPARE_ROWS } from "./facts.js?v=20261010g";
 import {
   POINTS,
   comboMult,
@@ -14,7 +14,7 @@ import {
   finalScore,
   rating,
   grade,
-} from "./score.js?v=20261010f";
+} from "./score.js?v=20261010g";
 import {
   initAudio,
   updateAudio,
@@ -24,7 +24,7 @@ import {
   setVolume,
   isMuted,
   sfx,
-} from "./audio.js?v=20261010f";
+} from "./audio.js?v=20261010g";
 
 const $ = (id) => document.getElementById(id);
 const KEYS = ["teine", "kokusai"];

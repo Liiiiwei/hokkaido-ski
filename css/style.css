@@ -9,7 +9,21 @@
   --d0: #2fa35a;
   --d1: #e23b2e;
   --d2: #15181c;
-  --serif: "Noto Serif TC", "Songti TC", serif;
+  /* 字距只有兩種：小標籤用 label，眉標用 wide */
+  --ls-label: 0.1em;
+  --ls-wide: 0.2em;
+  /* 字級階：全站字級只從這一組取 */
+  --fs-2xs: 0.62rem;
+  --fs-xs: 0.72rem;
+  --fs-sm: 0.8rem;
+  --fs-md: 0.9rem;
+  --fs-base: 1rem;
+  --fs-lg: 1.1rem;
+  --fs-xl: 1.3rem;
+  --fs-2xl: 1.6rem;
+  --fs-3xl: 2rem;
+  --fs-4xl: 2.6rem;
+  --fs-5xl: 3.4rem;
   --sans: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
   --num: "Barlow Condensed", "Noto Sans TC", sans-serif;
 }
@@ -71,7 +85,7 @@ button {
   font-weight: 700;
   padding: 0.72em 1.5em;
   border-radius: 3px;
-  letter-spacing: 0.08em;
+  letter-spacing: var(--ls-label);
   transition:
     transform 0.15s,
     box-shadow 0.15s;
@@ -126,7 +140,7 @@ button {
   position: absolute;
   right: -4vw;
   top: -9vw;
-  font: 900 clamp(280px, 52vw, 760px)/1 var(--serif);
+  font: 900 clamp(280px, 52vw, 760px)/1 var(--sans);
   color: #ffffff0a;
   user-select: none;
 }
@@ -137,15 +151,15 @@ button {
   margin: 0 auto;
 }
 .eyebrow {
-  font: 500 0.95rem/1 var(--num);
-  letter-spacing: 0.32em;
+  font: 500 var(--fs-md)/1 var(--num);
+  letter-spacing: var(--ls-wide);
   color: var(--flame);
   text-transform: uppercase;
   margin-bottom: 1.4rem;
   font-family: var(--sans);
 }
 h1 {
-  font: 900 clamp(3rem, 9.4vw, 7.6rem)/1.08 var(--serif);
+  font: 900 clamp(3rem, 9.4vw, 7.6rem)/1.08 var(--sans);
   letter-spacing: 0.02em;
   animation: rise 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
@@ -196,15 +210,15 @@ h1 {
   min-width: 0;
 }
 .t-ja {
-  font-size: 0.78rem;
-  letter-spacing: 0.2em;
+  font-size: var(--fs-sm);
+  letter-spacing: var(--ls-wide);
   color: var(--mute);
 }
 .ticket h2 {
-  font: 900 2.3rem/1.2 var(--serif);
+  font: 900 var(--fs-3xl)/1.2 var(--sans);
 }
 .t-tag {
-  font-size: 0.92rem;
+  font-size: var(--fs-md);
   color: #33475b;
   margin: 0.3rem 0 1rem;
 }
@@ -218,12 +232,12 @@ h1 {
 }
 .ticket li span {
   display: block;
-  font-size: 0.72rem;
+  font-size: var(--fs-xs);
   color: var(--mute);
-  letter-spacing: 0.1em;
+  letter-spacing: var(--ls-label);
 }
 .ticket li b {
-  font: 700 1.25rem/1.3 var(--num);
+  font: 700 var(--fs-xl)/1.3 var(--num);
   white-space: nowrap;
 }
 .t-stub {
@@ -255,18 +269,18 @@ h1 {
   bottom: -10px;
 }
 .t-stub span {
-  font-size: 0.75rem;
-  letter-spacing: 0.3em;
+  font-size: var(--fs-xs);
+  letter-spacing: var(--ls-wide);
   color: var(--mute);
 }
 .t-stub b {
-  font: 700 3.3rem/1 var(--num);
-  letter-spacing: -0.01em;
+  font: 700 var(--fs-5xl)/1 var(--num);
+  letter-spacing: 0;
 }
 .t-stub .solid {
   margin-top: 14px;
   padding: 0.6em 0.9em;
-  font-size: 0.92rem;
+  font-size: var(--fs-md);
   white-space: nowrap;
 }
 
@@ -277,7 +291,7 @@ h1 {
   padding: clamp(48px, 8vw, 104px) clamp(20px, 5vw, 48px);
 }
 .band h2 {
-  font: 900 clamp(1.8rem, 4vw, 3rem)/1.2 var(--serif);
+  font: 900 clamp(1.8rem, 4vw, 3rem)/1.2 var(--sans);
   margin-bottom: 2rem;
   display: flex;
   align-items: baseline;
@@ -285,16 +299,16 @@ h1 {
   gap: 0.5em;
 }
 .band h2 span {
-  font: 700 1rem/1 var(--num);
+  font: 700 var(--fs-base)/1 var(--num);
   color: var(--flame);
-  letter-spacing: 0.1em;
+  letter-spacing: var(--ls-label);
   border-top: 3px solid var(--flame);
   padding-top: 0.4em;
 }
 .band h2 small {
-  font: 500 0.85rem/1 var(--sans);
+  font: 500 var(--fs-sm)/1 var(--sans);
   color: var(--mute);
-  letter-spacing: 0.2em;
+  letter-spacing: var(--ls-wide);
 }
 .resort.alt {
   max-width: none;
@@ -311,7 +325,7 @@ h1 {
 table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.95rem;
+  font-size: var(--fs-md);
 }
 th,
 td {
@@ -321,7 +335,7 @@ td {
   vertical-align: top;
 }
 .compare thead th {
-  font: 900 1.35rem var(--serif);
+  font: 900 var(--fs-xl) var(--sans);
   border-bottom: 3px solid var(--ink);
 }
 .compare tbody th {
@@ -354,7 +368,7 @@ td {
   display: grid;
   grid-template-columns: auto 1fr;
   gap: 0.5em 1.2em;
-  font-size: 0.93rem;
+  font-size: var(--fs-md);
   padding: 1.2rem 0;
   border-top: 1px solid var(--ink);
   border-bottom: 1px solid var(--ink);
@@ -375,9 +389,9 @@ td {
   font-weight: 500;
 }
 .courses th {
-  font-size: 0.78rem;
+  font-size: var(--fs-sm);
   color: var(--mute);
-  letter-spacing: 0.1em;
+  letter-spacing: var(--ls-label);
   font-weight: 500;
   white-space: nowrap;
 }
@@ -387,12 +401,12 @@ td {
 }
 .courses td small {
   display: block;
-  font-size: 0.72rem;
+  font-size: var(--fs-xs);
   color: var(--mute);
 }
 .courses .zone td {
-  font: 700 0.8rem var(--sans);
-  letter-spacing: 0.2em;
+  font: 700 var(--fs-sm) var(--sans);
+  letter-spacing: var(--ls-wide);
   color: var(--flame);
   padding-top: 1.4em;
   border-bottom-color: var(--ink);
@@ -411,24 +425,24 @@ td {
   background: #fff;
   border-radius: 4px;
   border-bottom: 4px solid var(--ink);
-  font-size: 0.93rem;
+  font-size: var(--fs-md);
 }
 .steps li::before {
   content: counter(s);
   display: block;
-  font: 700 2.6rem/1 var(--num);
+  font: 700 var(--fs-4xl)/1 var(--num);
   color: var(--ice);
 }
 .steps b {
   display: block;
-  font: 900 1.25rem var(--serif);
+  font: 900 var(--fs-xl) var(--sans);
   margin: 0.2em 0 0.3em;
 }
 footer {
   background: var(--ink);
   color: #9fb2c5;
   padding: 36px clamp(20px, 5vw, 48px);
-  font-size: 0.8rem;
+  font-size: var(--fs-sm);
   text-align: center;
 }
 
@@ -471,7 +485,7 @@ footer {
   top: 0;
   pointer-events: auto;
   padding: 0.18em 0.7em;
-  font-size: 0.78rem;
+  font-size: var(--fs-sm);
   font-weight: 700;
   white-space: nowrap;
   border-radius: 2px;
@@ -543,9 +557,9 @@ footer {
   touch-action: pan-y;
 }
 #panel h3 {
-  font: 900 1.1rem var(--serif);
+  font: 900 var(--fs-lg) var(--sans);
   padding: 0 8px 8px;
-  letter-spacing: 0.2em;
+  letter-spacing: var(--ls-wide);
 }
 #panel ul {
   list-style: none;
@@ -558,14 +572,14 @@ footer {
   text-align: left;
   padding: 0.55em 0.6em;
   border-radius: 3px;
-  font-size: 0.9rem;
+  font-size: var(--fs-md);
   line-height: 1.35;
 }
 #panel li button span {
   flex: 1;
 }
 #panel li em {
-  font: 500 0.95rem var(--num);
+  font: 500 var(--fs-md) var(--num);
   color: #9fb2c5;
   font-style: normal;
   margin-left: 0.5em;
@@ -582,7 +596,7 @@ footer {
   color: var(--ink);
 }
 .hint {
-  font-size: 0.72rem;
+  font-size: var(--fs-xs);
   color: #8ea2b6;
   padding: 10px 8px 2px;
 }
@@ -606,25 +620,25 @@ footer {
   position: absolute;
   right: 8px;
   top: 4px;
-  font-size: 1.6rem;
+  font-size: var(--fs-2xl);
   line-height: 1;
   padding: 8px;
   color: var(--mute);
 }
 .zone {
-  font-size: 0.8rem;
+  font-size: var(--fs-sm);
   font-weight: 500;
   color: #33475b;
 }
 #card h3,
 .sheet h3 {
-  font: 900 1.7rem/1.25 var(--serif);
+  font: 900 var(--fs-2xl)/1.25 var(--sans);
   margin-top: 0.15em;
 }
 .ja {
-  font-size: 0.75rem;
+  font-size: var(--fs-xs);
   color: var(--mute);
-  letter-spacing: 0.08em;
+  letter-spacing: var(--ls-label);
 }
 #card dl,
 .sheet dl {
@@ -635,13 +649,13 @@ footer {
 }
 #card dt,
 .sheet dt {
-  font-size: 0.7rem;
+  font-size: var(--fs-xs);
   color: var(--mute);
-  letter-spacing: 0.1em;
+  letter-spacing: var(--ls-label);
 }
 #card dd,
 .sheet dd {
-  font: 700 1.4rem/1.2 var(--num);
+  font: 700 var(--fs-xl)/1.2 var(--num);
 }
 #cProfile {
   width: 100%;
@@ -656,7 +670,7 @@ footer {
   vector-effect: non-scaling-stroke;
 }
 .note {
-  font-size: 0.7rem;
+  font-size: var(--fs-xs);
   color: var(--mute);
   margin-top: 6px;
 }
@@ -695,13 +709,13 @@ footer {
 .hud-name {
   flex: 1;
   font-weight: 700;
-  font-size: 0.95rem;
+  font-size: var(--fs-md);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .hud-time {
-  font: 700 2rem/1 var(--num);
+  font: 700 var(--fs-3xl)/1 var(--num);
   font-variant-numeric: tabular-nums;
 }
 .hud-speed {
@@ -715,25 +729,25 @@ footer {
   font-variant-numeric: tabular-nums;
 }
 .hud-speed span {
-  font: 500 1.1rem var(--num);
+  font: 500 var(--fs-lg) var(--num);
   margin-left: 0.3em;
-  letter-spacing: 0.1em;
+  letter-spacing: var(--ls-label);
 }
 .hud-side {
   position: absolute;
   right: 20px;
   bottom: 92px;
   text-align: right;
-  font: 500 1rem/1.5 var(--num);
+  font: 500 var(--fs-base)/1.5 var(--num);
 }
 .hud-side span {
-  font: 500 0.72rem var(--sans);
-  letter-spacing: 0.15em;
+  font: 500 var(--fs-xs) var(--sans);
+  letter-spacing: var(--ls-label);
   margin-right: 0.6em;
   opacity: 0.85;
 }
 .hud-side b {
-  font-size: 1.7rem;
+  font-size: var(--fs-2xl);
   font-variant-numeric: tabular-nums;
 }
 .hud-side .pop b {
@@ -795,16 +809,16 @@ footer {
   background: #0e1b2c66;
   border: 2px solid #ffffffaa;
   color: #fff;
-  font-size: 1.7rem;
+  font-size: var(--fs-2xl);
   backdrop-filter: blur(4px);
   touch-action: none;
 }
 .touch #tB {
   width: 76px;
   height: 76px;
-  font-size: 1rem;
+  font-size: var(--fs-base);
   font-weight: 700;
-  letter-spacing: 0.1em;
+  letter-spacing: var(--ls-label);
 }
 .touch #tJ.down {
   background: #fff;
@@ -829,7 +843,7 @@ footer {
   inset: 0;
   display: grid;
   place-items: center;
-  font: 900 clamp(6rem, 26vw, 15rem)/1 var(--serif);
+  font: 900 clamp(6rem, 26vw, 15rem)/1 var(--sans);
   z-index: 5;
   pointer-events: none;
   text-shadow: 0 8px 40px #0e1b2c88;
@@ -889,7 +903,7 @@ footer {
   font-variant-numeric: tabular-nums;
 }
 .best {
-  font-size: 0.88rem;
+  font-size: var(--fs-md);
   color: var(--flame);
   font-weight: 700;
 }
@@ -940,7 +954,7 @@ footer {
     right: -10px;
   }
   .t-stub b {
-    font-size: 2.2rem;
+    font-size: var(--fs-3xl);
   }
   .t-stub .solid {
     margin: 0 0 0 auto;
@@ -991,10 +1005,10 @@ footer {
   }
   #card .board li {
     padding: 2px 6px;
-    font-size: 0.8rem;
+    font-size: var(--fs-sm);
   }
   #card h3 {
-    font-size: 1.35rem;
+    font-size: var(--fs-xl);
   }
   #cProfile {
     height: 44px;
@@ -1036,7 +1050,7 @@ footer {
   padding: 0.5em 0.7em;
   border: 1.5px solid var(--line);
   border-radius: 3px;
-  font-size: 0.88rem;
+  font-size: var(--fs-md);
   font-weight: 500;
   text-align: left;
 }
@@ -1053,7 +1067,7 @@ footer {
   color: #fff;
 }
 #gearDesc {
-  font-size: 0.78rem;
+  font-size: var(--fs-sm);
   color: #33475b;
   margin-top: 8px;
   min-height: 2.6em;
@@ -1066,7 +1080,7 @@ footer {
   /* 貼在頂部資訊下方，不壓到前方的雪道 */
   top: calc(max(14px, env(safe-area-inset-top)) + 132px);
   transform: translateX(-50%);
-  font: 900 clamp(1.15rem, 3vw, 2rem) var(--serif);
+  font: 900 clamp(1.15rem, 3vw, 2rem) var(--sans);
   color: #ffd23c;
   white-space: nowrap;
   opacity: 0;
@@ -1110,7 +1124,7 @@ footer {
 }
 .touch #tJ {
   background: #ff5a1fcc;
-  font-size: 1.2rem;
+  font-size: var(--fs-lg);
   font-weight: 700;
 }
 @media (max-width: 760px) {
@@ -1241,14 +1255,14 @@ h1 {
     padding: 20px 22px;
   }
   .ticket h2 {
-    font-size: 2rem;
+    font-size: var(--fs-3xl);
   }
   .t-stub {
     width: 132px;
     padding: 18px 12px;
   }
   .t-stub b {
-    font-size: 2.8rem;
+    font-size: var(--fs-4xl);
   }
 }
 .band {
@@ -1281,13 +1295,13 @@ h1 {
   }
   .hud-top button {
     padding: 0.4em 0.75em;
-    font-size: 0.8rem;
+    font-size: var(--fs-sm);
   }
   .hud-name {
-    font-size: 0.82rem;
+    font-size: var(--fs-sm);
   }
   .hud-time {
-    font-size: 1.3rem;
+    font-size: var(--fs-xl);
   }
   #mini {
     right: 12px;
@@ -1302,12 +1316,12 @@ h1 {
     bottom: auto;
   }
   .hud-speed b {
-    font-size: 1.9rem;
+    font-size: var(--fs-3xl);
   }
   .hud-speed span {
     display: block;
     margin: 1px 0 0;
-    font-size: 0.56rem;
+    font-size: var(--fs-2xs);
   }
   .hud-side {
     left: 68px;
@@ -1317,7 +1331,7 @@ h1 {
     text-align: left;
     display: flex;
     gap: 12px;
-    font-size: 0.66rem;
+    font-size: var(--fs-2xs);
     line-height: 1.15;
   }
   .hud-side > div:first-child {
@@ -1326,10 +1340,10 @@ h1 {
   .hud-side span {
     display: block;
     margin: 0;
-    font-size: 0.56rem;
+    font-size: var(--fs-2xs);
   }
   .hud-side b {
-    font-size: 1rem;
+    font-size: var(--fs-base);
   }
   .touch {
     bottom: max(18px, env(safe-area-inset-bottom));
@@ -1345,7 +1359,7 @@ h1 {
   .touch #tB {
     width: 66px;
     height: 66px;
-    font-size: 0.9rem;
+    font-size: var(--fs-md);
   }
   #pop {
     top: calc(max(14px, env(safe-area-inset-top)) + 162px);
@@ -1367,8 +1381,8 @@ h1 {
   display: flex;
   align-items: center;
   gap: 8px;
-  font: 700 0.78rem var(--sans);
-  letter-spacing: 0.12em;
+  font: 700 var(--fs-sm) var(--sans);
+  letter-spacing: var(--ls-label);
 }
 .hud-hp div {
   width: clamp(120px, 20vw, 240px);
@@ -1388,7 +1402,7 @@ h1 {
     background 0.25s;
 }
 .hud-hp b {
-  font: 700 1.1rem var(--num);
+  font: 700 var(--fs-lg) var(--num);
   min-width: 2ch;
 }
 #hud.fly .hud-hp,
@@ -1407,7 +1421,7 @@ h1 {
   border-radius: 8px;
   background: #e0263ce6;
   color: #fff;
-  font: 700 1rem var(--sans);
+  font: 700 var(--fs-base) var(--sans);
   white-space: nowrap;
   text-shadow: none;
   box-shadow: 0 6px 24px #0e1b2c55;
@@ -1421,11 +1435,11 @@ h1 {
   color: #e0263c;
   border-radius: 5px;
   padding: 2px 8px;
-  font-size: 0.82rem;
-  letter-spacing: 0.1em;
+  font-size: var(--fs-sm);
+  letter-spacing: var(--ls-label);
 }
 #warn em {
-  font: 700 1.1rem var(--num);
+  font: 700 var(--fs-lg) var(--num);
   font-style: normal;
   opacity: 0.9;
 }
@@ -1458,7 +1472,7 @@ h1 {
     top: calc(max(14px, env(safe-area-inset-top)) + 80px);
     transform: none;
     gap: 6px;
-    font-size: 0.56rem;
+    font-size: var(--fs-2xs);
   }
   .hud-hp div {
     flex: 1;
@@ -1468,11 +1482,11 @@ h1 {
     border-width: 1px;
   }
   .hud-hp b {
-    font-size: 0.8rem;
+    font-size: var(--fs-sm);
   }
   #warn {
     top: calc(max(14px, env(safe-area-inset-top)) + 128px);
-    font-size: 0.86rem;
+    font-size: var(--fs-md);
     padding: 6px 10px 6px 6px;
   }
 }
@@ -1515,7 +1529,7 @@ h1 {
 #hCombo {
   min-width: 2.6ch;
   text-align: right;
-  font: 700 2.1rem/1 var(--num);
+  font: 700 var(--fs-3xl)/1 var(--num);
   font-variant-numeric: tabular-nums;
   color: var(--heat);
   transition: color 0.2s;
@@ -1565,7 +1579,7 @@ h1 {
   margin-left: 12px;
   transform: translateY(-50%);
   white-space: nowrap;
-  font: 700 0.95rem var(--sans);
+  font: 700 var(--fs-md) var(--sans);
   opacity: 0;
   padding: 3px 12px;
   border-radius: 999px;
@@ -1573,7 +1587,7 @@ h1 {
 }
 #sGain b {
   margin-right: 0.35em;
-  font: 700 1.5rem/1 var(--num);
+  font: 700 var(--fs-2xl)/1 var(--num);
   color: #ffd23c;
 }
 #sGain.show {
@@ -1657,7 +1671,7 @@ h1 {
   }
   #hCombo {
     min-width: 0;
-    font-size: 1.3rem;
+    font-size: var(--fs-xl);
   }
   #streak .chain {
     width: 72px;
@@ -1667,10 +1681,10 @@ h1 {
   #sGain {
     margin-left: 6px;
     padding: 2px 9px;
-    font-size: 0.74rem;
+    font-size: var(--fs-xs);
   }
   #sGain b {
-    font-size: 1.05rem;
+    font-size: var(--fs-base);
   }
 }
 @keyframes drop {
@@ -1749,7 +1763,7 @@ h1 {
   background: #0e1b2c99;
   border: 1px solid #ffffff55;
   backdrop-filter: blur(6px);
-  font: 700 0.9rem var(--sans);
+  font: 700 var(--fs-md) var(--sans);
   text-align: center;
   text-shadow: none;
   opacity: 0;
@@ -1776,7 +1790,7 @@ h1 {
 @media (pointer: coarse) {
   #tip {
     bottom: 196px;
-    font-size: 0.8rem;
+    font-size: var(--fs-sm);
     white-space: nowrap;
   }
 }
@@ -1791,9 +1805,9 @@ h1 {
 .touch #tB {
   width: 62px;
   height: 62px;
-  font-size: 0.9rem;
+  font-size: var(--fs-md);
   font-weight: 700;
-  letter-spacing: 0.1em;
+  letter-spacing: var(--ls-label);
 }
 
 /* 暫停 */
@@ -1804,7 +1818,7 @@ h1 {
   flex-direction: column;
 }
 .keys {
-  font-size: 0.75rem;
+  font-size: var(--fs-xs);
   color: var(--mute);
   margin-top: 16px;
 }
@@ -1829,7 +1843,7 @@ h1 {
   place-items: center;
   border-radius: 50%;
   border: 5px solid currentColor;
-  font: 900 3.6rem/1 var(--serif);
+  font: 900 var(--fs-5xl)/1 var(--sans);
   color: var(--mute);
   opacity: 0;
   transform: rotate(-12deg) scale(2.6);
@@ -1868,22 +1882,22 @@ h1 {
   border-top: 1px solid var(--line);
 }
 .total span {
-  font-size: 0.75rem;
-  letter-spacing: 0.15em;
+  font-size: var(--fs-xs);
+  letter-spacing: var(--ls-label);
   color: var(--mute);
 }
 .total b {
-  font: 700 3rem/1 var(--num);
+  font: 700 var(--fs-4xl)/1 var(--num);
   font-variant-numeric: tabular-nums;
 }
 .total em {
   margin-left: auto;
   font-style: normal;
-  font-size: 0.78rem;
+  font-size: var(--fs-sm);
   color: var(--mute);
 }
 .total em i {
-  font: 700 1.3rem var(--num);
+  font: 700 var(--fs-xl) var(--num);
   font-style: normal;
   color: var(--ink);
   margin-left: 0.2em;
@@ -1893,23 +1907,23 @@ h1 {
   margin-top: 10px;
 }
 #result dd {
-  font-size: 1.25rem;
+  font-size: var(--fs-xl);
 }
 @media (max-width: 760px) {
   #result .sheet-in {
     padding: 20px 20px 18px;
   }
   #result .big {
-    font-size: 3.6rem;
+    font-size: var(--fs-5xl);
   }
   .grade {
     width: 68px;
     height: 68px;
-    font-size: 2.6rem;
+    font-size: var(--fs-4xl);
     border-width: 4px;
   }
   .total b {
-    font-size: 2.3rem;
+    font-size: var(--fs-3xl);
   }
   #result dl {
     gap: 6px 8px;
@@ -1917,7 +1931,7 @@ h1 {
     padding-top: 10px;
   }
   #result dd {
-    font-size: 1.1rem;
+    font-size: var(--fs-lg);
   }
 }
 
@@ -1927,8 +1941,8 @@ h1 {
   align-items: center;
   gap: 10px;
   margin-top: 10px;
-  font-size: 0.78rem;
-  letter-spacing: 0.08em;
+  font-size: var(--fs-sm);
+  letter-spacing: var(--ls-label);
   color: var(--mute);
 }
 .card-best b {
@@ -1938,11 +1952,11 @@ h1 {
   place-items: center;
   border-radius: 50%;
   border: 2px solid currentColor;
-  font: 900 0.95rem/1 var(--serif);
+  font: 900 var(--fs-md)/1 var(--sans);
   letter-spacing: 0;
 }
 .card-best span {
-  font: 700 1.1rem var(--num);
+  font: 700 var(--fs-lg) var(--num);
   color: var(--ink);
   letter-spacing: 0;
 }
@@ -1951,12 +1965,12 @@ h1 {
 #hud.air .touch button {
   border-color: #ffd34d;
   background: #ffb30055;
-  font-size: 1.05rem;
+  font-size: var(--fs-base);
   font-weight: 700;
 }
 #hud.air .touch #tL,
 #hud.air .touch #tR {
-  font-size: 1.9rem;
+  font-size: var(--fs-3xl);
 }
 
 /* 系統開了「減少動態效果」時，提示類的字還是要留在畫面上夠久 */
@@ -2011,7 +2025,7 @@ h1 {
   border-radius: 4px;
   background: #fff;
   color: var(--ink);
-  font: 700 1rem var(--sans);
+  font: 700 var(--fs-base) var(--sans);
 }
 .save input:focus {
   outline: 3px solid var(--flame);
@@ -2022,7 +2036,7 @@ h1 {
 }
 .save-msg {
   margin-top: 6px;
-  font-size: 0.85rem;
+  font-size: var(--fs-sm);
   font-weight: 700;
   color: #1a8f52;
 }
@@ -2031,8 +2045,8 @@ h1 {
 }
 .board-title {
   margin-top: 14px;
-  font-size: 0.7rem;
-  letter-spacing: 0.1em;
+  font-size: var(--fs-xs);
+  letter-spacing: var(--ls-label);
   color: var(--mute);
 }
 .board {
@@ -2048,7 +2062,7 @@ h1 {
   align-items: baseline;
   padding: 4px 6px;
   border-bottom: 1px solid var(--line);
-  font-size: 0.9rem;
+  font-size: var(--fs-md);
 }
 .board li.me {
   background: #ffe9b8;
@@ -2109,7 +2123,7 @@ h1 {
   padding: 9px 0;
   border-bottom: 1px solid var(--line);
   font-weight: 700;
-  font-size: 0.92rem;
+  font-size: var(--fs-md);
 }
 .seg {
   display: flex;
@@ -2124,7 +2138,7 @@ h1 {
   border: 0;
   background: none;
   color: var(--ink);
-  font: 700 0.85rem var(--sans);
+  font: 700 var(--fs-sm) var(--sans);
   cursor: pointer;
 }
 .seg button + button {
@@ -2179,7 +2193,7 @@ h1 {
   padding: 0;
   display: grid;
   gap: 3px;
-  font-size: 0.86rem;
+  font-size: var(--fs-md);
   text-align: left;
 }
 .goals li {
@@ -2241,7 +2255,7 @@ h1 {
   gap: 8px;
 }
 #hSplit {
-  font: 700 0.95rem/1 var(--num);
+  font: 700 var(--fs-md)/1 var(--num);
   font-style: normal;
   font-variant-numeric: tabular-nums;
   padding: 3px 7px;
@@ -2274,7 +2288,7 @@ h1 {
 }
 @media (max-width: 760px), (max-height: 520px) {
   #hSplit {
-    font-size: 0.78rem;
+    font-size: var(--fs-sm);
     padding: 2px 6px;
   }
 }
