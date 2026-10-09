@@ -3,10 +3,10 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/OrbitControls.js";
 // 改了任何一個 js 或 css 檔，就把這裡與 index.html 的 ?v= 一起換新。
 // 不換的話瀏覽器會拿新的 app.js 配快取裡舊的模組，整頁載不起來
-import { buildWorld, DIFF, STEP } from "./world.js?v=20261010a";
-import { createHazards } from "./hazards.js?v=20261010a";
-import { createSkier, BOARDS } from "./skier.js?v=20261010a";
-import { FACTS, COMPARE_ROWS } from "./facts.js?v=20261010a";
+import { buildWorld, DIFF, STEP } from "./world.js?v=20261010b";
+import { createHazards } from "./hazards.js?v=20261010b";
+import { createSkier, BOARDS } from "./skier.js?v=20261010b";
+import { FACTS, COMPARE_ROWS } from "./facts.js?v=20261010b";
 import {
   POINTS,
   comboMult,
@@ -14,7 +14,7 @@ import {
   finalScore,
   rating,
   grade,
-} from "./score.js?v=20261010a";
+} from "./score.js?v=20261010b";
 import {
   initAudio,
   updateAudio,
@@ -23,7 +23,7 @@ import {
   setMuted,
   isMuted,
   sfx,
-} from "./audio.js?v=20261010a";
+} from "./audio.js?v=20261010b";
 
 const $ = (id) => document.getElementById(id);
 const KEYS = ["teine", "kokusai"];
@@ -32,6 +32,12 @@ const fmtTime = (t) =>
   `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, "0")}`;
 const diffTag = (d) => `<i class="d d${d}"></i>${DIFF[d].name}`;
 const buzz = (ms) => navigator.vibrate?.(ms); // 手機震動回饋
+// 系統開了「減少動態效果」：鏡頭晃動縮到三成、不做頓幀
+const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const TRICK_T = 0.62, // 一個特技要轉多久（秒）
+  TRICK_KICK = 3.4, // 做特技時往上再推的速度
+  GRAVITY = 15,
+  JUMP_BUFFER = 0.12; // 落地前這麼久以內按跳，落地瞬間照樣起跳（秒）
 const store = {
   get(k) {
     try {
@@ -688,6 +694,7 @@ function startSki() {
   G.dodged = 0;
   G.acc = 0;
   G.freeze = 0;
+  G.jumpBuf = 0;
   G.shake = 0;
   G.impact = 0;
   G.dip = 0;
@@ -1135,14 +1142,21 @@ function follow(pos, target, dt, rate) {
   camBase.lerp(pos, k);
   look.lerp(target, k);
   camera.position.copy(camBase);
-  if (G.shake > 0.002) {
-    camera.position.x += Math.sin(clock * 71) * G.shake;
-    camera.position.y += Math.sin(clock * 93 + 1) * G.shake;
-    camera.position.z += Math.sin(clock * 57 + 2) * G.shake * 0.6;
+  // G.shake 是 0～1 的「衝擊量」，實際晃動取平方：小衝擊幾乎不晃，大衝擊才明顯
+  const amp = G.shake * G.shake * (calm ? 0.3 : 1);
+  if (amp > 0.0004) {
+    camera.position.x += wobble(71, 0) * amp * 0.5;
+    camera.position.y += wobble(93, 1) * amp * 0.5;
+    camera.position.z += wobble(57, 2) * amp * 0.3;
   }
   camera.lookAt(look);
+  if (amp > 0.0004) camera.rotateZ(wobble(83, 3) * amp * 0.04);
   G.snap = false;
 }
+// 兩個不成倍數的正弦相加，晃起來不會像單一頻率那樣規律
+const wobble = (f, o) =>
+  Math.sin(clock * f + o) * 0.65 + Math.sin(clock * f * 1.73 + o * 2.1) * 0.35;
+const jolt = (t) => (G.shake = Math.min(1, (G.shake || 0) + t));
 
 let scoreShown = 0; // 畫面上正在滾動的分數
 // 得分：先乘上目前的連段倍率，再把連段往上加一
@@ -1237,11 +1251,12 @@ function simulate(dt) {
   G.v = Math.max(input.brake && !G.air ? 0 : 4.5, G.v + a * dt);
 
   // 跳台與騰空
+  if (G.jumpBuf > 0) G.jumpBuf -= dt;
   if (G.air) {
-    G.vy -= 15 * dt;
+    G.vy -= GRAVITY * dt;
     G.y += G.vy * dt;
     if (G.trick) {
-      G.trick.p += dt / 0.62;
+      G.trick.p += dt / TRICK_T;
       if (G.trick.p >= 1) {
         award(
           "trick",
@@ -1258,7 +1273,8 @@ function simulate(dt) {
       G.air = false;
       G.impact = impact;
       G.dipV -= impact * 0.22;
-      G.shake = Math.max(G.shake, Math.min(0.28, impact * 0.022));
+      jolt(Math.min(0.6, impact * 0.06));
+      if (impact > 8 && !calm) G.freeze = 0.03; // 重落地頓一下，更有重量
       burst(8 + impact);
       sfx.land(impact);
       buzz(impact > 7 ? 25 : 10);
@@ -1269,7 +1285,8 @@ function simulate(dt) {
         breakCombo();
         sfx.miss();
         popup("落地失誤");
-      }
+      } else if (G.jumpBuf > 0) jump(); // 落地前預按的那一下
+      G.jumpBuf = 0;
     }
   } else {
     let ramp = 0;
@@ -1324,15 +1341,21 @@ function simulate(dt) {
     const { h, kind } = danger.pass;
     if (kind === "leap") award("dodge", POINTS.leap, `飛越${h.name}`);
     else if (kind === "near") award("dodge", POINTS.near, "驚險閃過");
-    if (kind !== "clear") sfx.near();
+    if (kind !== "clear") {
+      sfx.near();
+      // 擦身而過的那一瞬間頓一下、晃一下
+      if (!calm) G.freeze = 0.045;
+      jolt(0.35);
+      buzz(15);
+    }
   }
   if (danger.hit && G.inv <= 0) {
     const h = danger.hit;
     G.hp = Math.max(0, G.hp - h.dmg);
     G.inv = 1.6;
     G.v *= 0.35;
-    G.freeze = 0.09; // 撞擊瞬間定格
-    G.shake = 0.75;
+    G.freeze = calm ? 0 : 0.09; // 撞擊瞬間定格
+    jolt(0.9);
     G.skier.hit();
     breakCombo();
     burst(16);
@@ -1485,35 +1508,40 @@ function present(dt, alpha) {
 }
 
 // 空白鍵：在地面是跳，騰空時再按一次做特技
+function jump() {
+  G.air = true;
+  G.onRamp = false;
+  G.vy = 6.4 * G.board.jump;
+  burst(8);
+  sfx.jump();
+}
 function pressJump() {
   if (mode !== "ski" || paused) return;
-  if (!G.air) {
-    G.air = true;
-    G.onRamp = false;
-    G.vy = 6.4 * G.board.jump;
-    burst(8);
-    sfx.jump();
-  } else
-    doTrick(
-      input.tuck
-        ? "tuck"
-        : input.brake
-          ? "brake"
-          : input.left
-            ? "left"
-            : "right",
-    );
+  if (!G.air) return jump();
+  const done = doTrick(
+    input.tuck ? "tuck" : input.brake ? "brake" : input.left ? "left" : "right",
+  );
+  // 來不及做特技的高度：這一下記成「落地後馬上再跳」
+  if (!done && !G.trick) G.jumpBuf = JUMP_BUFFER;
+}
+// 現在開始做特技，落地前轉不轉得完
+function trickFits() {
+  const vy = Math.max(G.vy, 0) + TRICK_KICK,
+    t = (vy + Math.sqrt(vy * vy + 2 * GRAVITY * G.y)) / GRAVITY;
+  return t > TRICK_T + 0.03;
 }
 // 騰空時做特技。鍵盤是按住方向再按跳；手機是騰空後直接點對應的按鈕
 function doTrick(k) {
   if (mode !== "ski" || paused || !G.air || G.trick) return false;
+  // 已經快落地、注定轉不完的那一下不開始，免得白白吃一次落地失誤
+  if (!trickFits()) return false;
   G.trick =
     k === "tuck"
       ? { type: "front", name: "前空翻", p: 0 }
       : k === "brake"
         ? { type: "back", name: "後空翻", p: 0 }
         : { type: "spin", name: "360 轉體", dir: k === "left" ? 1 : -1, p: 0 };
-  G.vy = Math.max(G.vy, 0) + 3.4; // 再推一把，讓動作轉得完
+  G.vy = Math.max(G.vy, 0) + TRICK_KICK; // 再推一把，讓動作轉得完
   sfx.jump();
   buzz(10);
   return true;
@@ -1955,7 +1983,7 @@ function loop(now) {
   last = now;
   if (paused) return renderer.render(world.scene, camera);
   clock += dt;
-  G.shake = (G.shake || 0) * Math.exp(-dt * 7);
+  G.shake = Math.max(0, (G.shake || 0) - dt * 1.7);
   if (mode === "explore") {
     if (tween) {
       tween.t = Math.min(1, tween.t + dt / 1.1);
@@ -2131,21 +2159,56 @@ for (const [id, k] of [
   ["tT", "tuck"],
 ]) {
   const el = $(id),
-    set = (v) => (e) => {
-      e.preventDefault();
-      if (v && doTrick(k)) return; // 騰空時這一下是特技，不當成轉向
-      input[k] = v;
-      el.classList.toggle("down", v);
-    };
-  el.addEventListener("pointerdown", set(true));
-  for (const ev of ["pointerup", "pointercancel", "pointerleave"])
-    el.addEventListener(ev, set(false));
+    steer = k === "left" || k === "right";
+  let held = null; // 這根手指目前按著哪個方向
+  const press = (to) => {
+    if (held === to) return;
+    if (held) {
+      input[held] = false;
+      $(held === "left" ? "tL" : held === "right" ? "tR" : id).classList.remove(
+        "down",
+      );
+    }
+    held = to;
+    if (to) {
+      input[to] = true;
+      $(to === "left" ? "tL" : to === "right" ? "tR" : id).classList.add(
+        "down",
+      );
+    }
+  };
+  el.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    if (doTrick(k)) return; // 騰空時這一下是特技，不當成轉向
+    // 手指滑出按鈕也不放開；左右兩顆之間可以直接滑過去換邊
+    try {
+      el.setPointerCapture(e.pointerId);
+    } catch {
+      /* 抓不到指標就維持原本的行為 */
+    }
+    press(k);
+  });
+  el.addEventListener("pointermove", (e) => {
+    if (!held || !steer) return;
+    const a = $("tL").getBoundingClientRect(),
+      b = $("tR").getBoundingClientRect();
+    press(e.clientX < (a.right + b.left) / 2 ? "left" : "right");
+  });
+  for (const ev of ["pointerup", "pointercancel", "lostpointercapture"])
+    el.addEventListener(ev, () => press(null));
   el.addEventListener("contextmenu", (e) => e.preventDefault());
 }
-$("tJ").addEventListener("pointerdown", (e) => {
-  e.preventDefault();
-  pressJump();
-});
+{
+  const el = $("tJ"),
+    up = () => el.classList.remove("down");
+  el.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    el.classList.add("down");
+    pressJump();
+  });
+  for (const ev of ["pointerup", "pointercancel", "pointerleave"])
+    el.addEventListener(ev, up);
+}
 $("gear").addEventListener("click", (e) => {
   const b = e.target.closest("button");
   if (!b) return;
