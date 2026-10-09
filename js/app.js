@@ -3,10 +3,10 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/OrbitControls.js";
 // 改了任何一個 js 或 css 檔，就把這裡與 index.html 的 ?v= 一起換新。
 // 不換的話瀏覽器會拿新的 app.js 配快取裡舊的模組，整頁載不起來
-import { buildWorld, DIFF, STEP } from "./world.js?v=20261010e";
-import { createHazards } from "./hazards.js?v=20261010e";
-import { createSkier, BOARDS } from "./skier.js?v=20261010e";
-import { FACTS, COMPARE_ROWS } from "./facts.js?v=20261010e";
+import { buildWorld, DIFF, STEP } from "./world.js?v=20261010f";
+import { createHazards } from "./hazards.js?v=20261010f";
+import { createSkier, BOARDS } from "./skier.js?v=20261010f";
+import { FACTS, COMPARE_ROWS } from "./facts.js?v=20261010f";
 import {
   POINTS,
   comboMult,
@@ -14,7 +14,7 @@ import {
   finalScore,
   rating,
   grade,
-} from "./score.js?v=20261010e";
+} from "./score.js?v=20261010f";
 import {
   initAudio,
   updateAudio,
@@ -24,7 +24,7 @@ import {
   setVolume,
   isMuted,
   sfx,
-} from "./audio.js?v=20261010e";
+} from "./audio.js?v=20261010f";
 
 const $ = (id) => document.getElementById(id);
 const KEYS = ["teine", "kokusai"];
@@ -1818,10 +1818,10 @@ function showWarn(h) {
     from = h.side < 0 ? "左" : "右",
     text =
       h.type === "ball"
-        ? `雪球從${from}邊滾過來`
+        ? `雪球從${from}邊滾過來，閃開或跳過去`
         : h.type === "wolf"
-          ? `狼從${from}邊衝出來，往${h.side < 0 ? "右" : "左"}閃`
-          : "前方有雪怪，繞開牠",
+          ? `狼從${from}邊衝出來，往${h.side < 0 ? "右" : "左"}閃或跳過去`
+          : "前方有雪怪，繞開或跳過去",
     k = `${h.type}${h.s}${dist}`;
   if (k === warnKey) return;
   warnKey = k;

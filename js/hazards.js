@@ -1,10 +1,11 @@
 // 隨機關卡：雪球、狼、雪怪。每一個都會先預警、看得到來向，注意到就閃得掉
 import * as THREE from "three";
 
+// clear：人離地超過這個高度就算從上面越過，不會撞到。越大隻要跳得越準
 export const HAZARDS = {
-  ball: { name: "雪球", dmg: 20, r: 2.0, jump: false },
-  wolf: { name: "狼", dmg: 25, r: 1.8, jump: true }, // 跳得過去
-  yeti: { name: "雪怪", dmg: 35, r: 2.3, jump: false },
+  ball: { name: "雪球", dmg: 20, r: 2.0, clear: 0.75 },
+  wolf: { name: "狼", dmg: 25, r: 1.8, clear: 0.6 },
+  yeti: { name: "雪怪", dmg: 35, r: 2.3, clear: 0.9 },
 };
 const WARN_AT = 150, // 進入這個距離開始預警、現身
   GO_AT = 90; // 進入這個距離才開始動
@@ -531,14 +532,14 @@ export function createHazards(world, run, kickers, gates, group, fx = {}) {
           dist > 0 ? 0.42 + Math.sin(clock * 9) * 0.16 : 0;
       if (dist < 0) h.sign.visible = false;
       if (dist > 0 && (!warn || dist < warn.s - s)) warn = h;
-      if (
-        !h.hit &&
-        Math.abs(dist) < 1.7 &&
-        Math.abs(d - h.d) < h.r &&
-        !(h.jump && y > 0.9)
-      ) {
-        h.hit = true;
-        hit = h;
+      // 人和牠重疊的那一小段：在空中夠高就是飛越，否則算撞到。
+      // 飛越是當下就記起來，不等通過之後才看高度（那時多半已經落地）
+      if (!h.hit && Math.abs(dist) < 1.7 && Math.abs(d - h.d) < h.r) {
+        if (y > h.clear) h.over = true;
+        else {
+          h.hit = true;
+          hit = h;
+        }
       }
       if (!h.passed && dist < -1.7) {
         h.passed = true;
@@ -546,12 +547,7 @@ export function createHazards(world, run, kickers, gates, group, fx = {}) {
           const gap = Math.abs(d - h.d);
           pass = {
             h,
-            kind:
-              h.jump && y > 0.9 && gap < h.r
-                ? "leap"
-                : gap < h.r + 2.6
-                  ? "near"
-                  : "clear",
+            kind: h.over ? "leap" : gap < h.r + 2.6 ? "near" : "clear",
           };
         }
       }
