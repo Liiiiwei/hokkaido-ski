@@ -3,10 +3,10 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/OrbitControls.js";
 // 改了任何一個 js 或 css 檔，就把這裡與 index.html 的 ?v= 一起換新。
 // 不換的話瀏覽器會拿新的 app.js 配快取裡舊的模組，整頁載不起來
-import { buildWorld, DIFF, STEP } from "./world.js?v=20261010b";
-import { createHazards } from "./hazards.js?v=20261010b";
-import { createSkier, BOARDS } from "./skier.js?v=20261010b";
-import { FACTS, COMPARE_ROWS } from "./facts.js?v=20261010b";
+import { buildWorld, DIFF, STEP } from "./world.js?v=20261010c";
+import { createHazards } from "./hazards.js?v=20261010c";
+import { createSkier, BOARDS } from "./skier.js?v=20261010c";
+import { FACTS, COMPARE_ROWS } from "./facts.js?v=20261010c";
 import {
   POINTS,
   comboMult,
@@ -14,7 +14,7 @@ import {
   finalScore,
   rating,
   grade,
-} from "./score.js?v=20261010b";
+} from "./score.js?v=20261010c";
 import {
   initAudio,
   updateAudio,
@@ -23,7 +23,7 @@ import {
   setMuted,
   isMuted,
   sfx,
-} from "./audio.js?v=20261010b";
+} from "./audio.js?v=20261010c";
 
 const $ = (id) => document.getElementById(id);
 const KEYS = ["teine", "kokusai"];
@@ -182,6 +182,38 @@ function resize() {
   renderer.setSize(innerWidth, innerHeight, false);
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
+  // 雪霧粒子的大小是照畫面高度算的，畫面變了要跟著改
+  if (G.spray)
+    G.spray.material.uniforms.uScale.value = renderer.domElement.height * 0.9;
+}
+// 依實際幀率自動調解析度：滑行時掉到 45 幀以下就降一級，穩定夠快再升回來
+const PR_MAX = Math.min(devicePixelRatio, lowPower ? 1.5 : 2),
+  PR_MIN = Math.min(1, PR_MAX);
+const tune = { t: 0, n: 0, good: 0, ups: 0 };
+function tuneQuality(raw) {
+  if (raw > 0.25) return; // 切走分頁回來的那一幀不算
+  tune.t += raw;
+  tune.n++;
+  if (tune.t < 1.5) return;
+  const fps = tune.n / tune.t,
+    pr = renderer.getPixelRatio();
+  tune.t = tune.n = 0;
+  let next = pr;
+  if (fps < 45 && pr > PR_MIN) {
+    next = Math.max(PR_MIN, pr - 0.25);
+    tune.good = 0;
+  } else if (fps > 57 && pr < PR_MAX && tune.ups < 2) {
+    // 連續六秒都夠快才升，而且一局最多升兩次，免得來回跳
+    if (++tune.good >= 4) {
+      next = Math.min(PR_MAX, pr + 0.25);
+      tune.good = 0;
+      tune.ups++;
+    }
+  } else tune.good = 0;
+  if (next !== pr) {
+    renderer.setPixelRatio(next);
+    resize();
+  }
 }
 
 async function enter(k) {
@@ -343,15 +375,20 @@ const GATE_W = 6.5; // 旗門半寬（公尺）
 
 /* ---------- 小地圖 ---------- */
 // 以自己為中心、前進方向朝上，看得到前方約 300 公尺的彎道、旗門與跳台
-const MINI_SPAN = 440;
+const MINI_SPAN = 440,
+  miniP = {},
+  miniQ = {};
+let miniTick = 0;
 function drawMini() {
+  // 小地圖很小，每三幀重畫一次就夠，省下每幀幾百次畫線
+  if (miniTick++ % 3) return;
   const cv = $("mini"),
     g = cv.getContext("2d"),
     r = G.run,
     size = cv.width,
     k = size / MINI_SPAN;
   const fly = mode === "fly";
-  const p = r.at(G.s, {}),
+  const p = r.at(G.s, miniP),
     d = fly ? 0 : G.d;
   const px = p.x - p.tz * d,
     pz = p.z + p.tx * d;
@@ -396,7 +433,7 @@ function drawMini() {
   dot(end[0], end[1], 14, "#ff5a1f");
   if (!fly) {
     for (const kk of G.kickers) {
-      const q = r.at(kk.s, {});
+      const q = r.at(kk.s, miniQ);
       dot(q.x, q.z, 7, "#ffb400");
     }
     for (const h of G.haz.list) {
@@ -407,7 +444,7 @@ function drawMini() {
       dot(hx, hz, 7, "#e0263c");
     }
     for (const gt of G.gates) {
-      const q = r.at(gt.s, {}),
+      const q = r.at(gt.s, miniQ),
         c = gt.hit
           ? "#2fd27a"
           : gt.done
@@ -506,8 +543,17 @@ function startFly() {
 
 /* ---------- 滑行 ---------- */
 function clearGame() {
-  if (G.group && world) world.scene.remove(G.group);
+  if (G.group && world) {
+    world.scene.remove(G.group);
+    // 每次開滑都會新建旗門、邊線、人物、危險物與粒子；不釋放的話連玩幾局顯示記憶體只增不減。
+    // 共用的幾何與材質被釋放也沒關係，下次用到會自動重新上傳
+    G.group.traverse((o) => {
+      o.geometry?.dispose();
+      for (const m of [o.material].flat()) m?.dispose();
+    });
+  }
   G.group = null;
+  G.spray = G.track = null;
   showWarn(null);
   $("hud").classList.remove("hurt");
   $("tip").classList.remove("show");
@@ -1376,6 +1422,9 @@ function simulate(dt) {
 }
 
 // 畫面：依內插後的狀態擺人物、鏡頭、雪霧、痕跡與持續音
+const trailA = new Float32Array(12),
+  trailB = new Float32Array(12),
+  TRAIL_TRI = [0, 3, 6, 3, 9, 6]; // 兩個三角形：前一格左右、這一格左右
 function present(dt, alpha) {
   const r = G.run;
   R.s = G.ps + (G.s - G.ps) * alpha;
@@ -1457,25 +1506,33 @@ function present(dt, alpha) {
         : Math.min(1, Math.abs(R.ang) * 0.9 + (input.brake ? 0.8 : 0)),
       ski = G.board.kind === "ski",
       wid = (ski ? 0.12 : 0.3) + skid * (ski ? 0.2 : 0.55),
-      cur = [];
-    for (const off of ski ? [-0.2, 0.2] : [0, 0])
-      for (const e of [-0.5, 0.5]) {
-        const x = pos.x + nx * (off + e * wid),
+      L = G.trackLast,
+      cur = L === trailA ? trailB : trailA; // 兩塊緩衝輪流用，不每幀配置新陣列
+    let ci = 0;
+    for (let lane = 0; lane < 2; lane++) {
+      const off = ski ? (lane ? 0.2 : -0.2) : 0;
+      for (let side = 0; side < 2; side++) {
+        const e = side ? 0.5 : -0.5,
+          x = pos.x + nx * (off + e * wid),
           z = pos.z + nz * (off + e * wid);
-        cur.push(x, world.surfaceAt(x, z) + 0.06, z);
+        cur[ci++] = x;
+        cur[ci++] = world.surfaceAt(x, z) + 0.06;
+        cur[ci++] = z;
       }
-    const L = G.trackLast,
-      moved = L ? Math.hypot(cur[0] - L[0], cur[2] - L[2]) : 0;
+    }
+    const moved = L ? Math.hypot(cur[0] - L[0], cur[2] - L[2]) : 0;
     if (!L || moved > 4) G.trackLast = cur;
     else if (moved > 0.45) {
       const o = (G.trackI++ % G.trackN) * 36;
       for (let lane = 0; lane < 2; lane++) {
-        const a = lane * 6,
-          q = [0, 3, 6, 3, 9, 6]; // 兩個三角形：前一格左右、這一格左右
+        const a = lane * 6;
         for (let v = 0; v < 6; v++) {
-          const src = q[v] < 6 ? L : cur,
-            b = a + (q[v] % 6);
-          G.trackP.set([src[b], src[b + 1], src[b + 2]], o + lane * 18 + v * 3);
+          const src = TRAIL_TRI[v] < 6 ? L : cur,
+            b = a + (TRAIL_TRI[v] % 6),
+            to = o + lane * 18 + v * 3;
+          G.trackP[to] = src[b];
+          G.trackP[to + 1] = src[b + 1];
+          G.trackP[to + 2] = src[b + 2];
         }
       }
       G.track.geometry.attributes.position.needsUpdate = true;
@@ -1597,9 +1654,16 @@ function showWarn(h) {
 
 // 丟出一顆雪霧粒子
 function snow(x, y, z, vx, vy, vz, life, size) {
-  const k = G.sprayI++ % G.sprayN;
-  G.sprayP.set([x, y, z], k * 3);
-  G.sprayV.set([vx, vy, vz], k * 3);
+  const k = G.sprayI++ % G.sprayN,
+    i = k * 3,
+    p = G.sprayP,
+    v = G.sprayV;
+  p[i] = x;
+  p[i + 1] = y;
+  p[i + 2] = z;
+  v[i] = vx;
+  v[i + 1] = vy;
+  v[i + 2] = vz;
   G.sprayL[k * 2] = G.sprayL[k * 2 + 1] = life;
   G.sprayF[k] = 1;
   G.sprayS[k] = size;
@@ -1778,8 +1842,10 @@ function finish(failed = false) {
     done: false,
   };
   setMode("result");
-  if (failed) sfx.fail();
-  else sfx.finish();
+  if (failed) {
+    sfx.fail();
+    G.skier.fall();
+  } else sfx.finish();
 }
 
 // 結算：總分跳數字，跳完才蓋上評級
@@ -1979,9 +2045,11 @@ function backToExplore() {
 /* ---------- 主迴圈 ---------- */
 function loop(now) {
   raf = requestAnimationFrame(loop);
-  const dt = Math.min(0.05, (now - last) / 1000);
+  const raw = (now - last) / 1000,
+    dt = Math.min(0.05, raw);
   last = now;
   if (paused) return renderer.render(world.scene, camera);
+  if (mode === "ski") tuneQuality(raw);
   clock += dt;
   G.shake = Math.max(0, (G.shake || 0) - dt * 1.7);
   if (mode === "explore") {
@@ -2220,4 +2288,5 @@ $("gear").addEventListener("click", (e) => {
 });
 
 // 除錯用：網址加上 #debug 才會掛出狀態
-if (location.hash === "#debug") window.__ski = { G, input, world: () => world };
+if (location.hash === "#debug")
+  window.__ski = { G, input, world: () => world, gl: () => renderer };

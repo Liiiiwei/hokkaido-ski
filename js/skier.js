@@ -500,6 +500,9 @@ export function createSkier(board = BOARDS[0], { blob = true } = {}) {
   const sCrouch = new Spring(110, 13, 0.1);
   const sPom = new Spring(140, 9);
   const sYaw = new Spring(60, 10);
+  const sSquash = new Spring(150, 11); // 上半身的擠壓伸展：正值拉長、負值壓扁
+  const TUMBLE_T = 0.85;
+  let tumble = 0; // 摔倒翻滾剩餘時間
   let t = Math.random() * 10,
     lastSteer = 0,
     wasAir = false,
@@ -516,6 +519,12 @@ export function createSkier(board = BOARDS[0], { blob = true } = {}) {
     hurt = 0.75;
     sCrouch.v += 4;
     sRoll.v += (Math.random() < 0.5 ? -1 : 1) * 5;
+    sSquash.v -= 3.2;
+  }
+  /** 體力耗盡：往前滾一圈再坐下 */
+  function fall() {
+    tumble = TUMBLE_T;
+    sSquash.v -= 2.5;
   }
 
   /** state: { phase: idle|ski|cheer|sad, ready, steer, ang, v, brake, tuck, carve, push, y, air, trick, impact } */
@@ -534,9 +543,21 @@ export function createSkier(board = BOARDS[0], { blob = true } = {}) {
     if (ski && !inAir && s.steer !== lastSteer)
       sCrouch.v -= s.steer ? 2.4 : 1.2;
     lastSteer = s.steer;
-    if (inAir && !wasAir) sCrouch.v -= 4;
-    if (!inAir && wasAir) sCrouch.v += 3 + Math.min(6, (s.impact || 0) * 0.6);
+    if (inAir && !wasAir) {
+      sCrouch.v -= 4;
+      sSquash.v += 2.6; // 起跳往上拉長
+    }
+    if (!inAir && wasAir) {
+      sCrouch.v += 3 + Math.min(6, (s.impact || 0) * 0.6);
+      sSquash.v -= 1.6 + Math.min(3.4, (s.impact || 0) * 0.35); // 落地壓扁再彈回
+    }
     wasAir = inAir;
+    // 壓扁時往兩側鼓出去，體積看起來不變
+    const sq = THREE.MathUtils.clamp(sSquash.step(0, dt), -0.24, 0.2),
+      wide = 1 / Math.sqrt(1 + sq);
+    torso.scale.set(wide, 1 + sq, wide);
+    tumble = Math.max(0, tumble - dt);
+    const tp = tumble > 0 ? 1 - tumble / TUMBLE_T : 0; // 翻滾進度 0 → 1
 
     const roll = sRoll.step(
       ski
@@ -583,7 +604,8 @@ export function createSkier(board = BOARDS[0], { blob = true } = {}) {
 
     // 高度：遊戲給的騰空高度＋歡呼時的小跳
     hop = damp(hop, cheer ? Math.max(0, Math.sin(t * 6.5)) * 0.4 : 0, 14, dt);
-    const lift = hop + (ski ? s.y || 0 : 0) / SCALE;
+    const lift =
+      hop + (ski ? s.y || 0 : 0) / SCALE + Math.sin(tp * Math.PI) * 0.55;
     air.position.y = PIVOT + lift;
     const sh = 1 / (1 + lift * 0.45);
     shadow.scale.set(sh, sh * 1.5, sh);
@@ -593,7 +615,11 @@ export function createSkier(board = BOARDS[0], { blob = true } = {}) {
     const tr = inAir ? s.trick : null;
     const e = tr ? tr.p * tr.p * (3 - 2 * tr.p) * Math.PI * 2 : 0;
     air.rotation.set(
-      tr && tr.type !== "spin" ? e * (tr.type === "front" ? 1 : -1) : 0,
+      tp > 0
+        ? tp * tp * (3 - 2 * tp) * Math.PI * 2
+        : tr && tr.type !== "spin"
+          ? e * (tr.type === "front" ? 1 : -1)
+          : 0,
       tr && tr.type === "spin" ? e * tr.dir : 0,
       0,
     );
@@ -741,5 +767,5 @@ export function createSkier(board = BOARDS[0], { blob = true } = {}) {
     smile.visible = !gasp.visible && !sad;
   }
 
-  return { group: root, update, hit };
+  return { group: root, update, hit, fall };
 }
