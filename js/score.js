@@ -27,16 +27,25 @@ export function finalScore({ points, time, par, hp, failed }) {
   return { timeBonus, hpBonus, total: points + timeBonus + hpBonus };
 }
 
-// 參考分：標準時間、滿體力、旗門全過且連段不斷、每座跳台一個轉體
-export function refScore({ gates, kickers }) {
-  let sum = 3000 + kickers * POINTS.spin;
-  for (let i = 0; i < gates; i++) sum += POINTS.gate * comboMult(i);
-  return sum;
+// 評級看四件事各做到幾成，不看總分：總分可以靠連段與特技一直疊，評級不行。
+// 旗門四成、速度三成、體力一成半、特技與閃避一成半
+export function rating({ hits, gates, time, par, hp, style, kickers }) {
+  const clamp = (v) => Math.max(0, Math.min(1, v));
+  const gate = gates ? hits / gates : 1,
+    pace = clamp(2 - time / par), // 標準時間內滿分，慢到兩倍歸零
+    styleRef = Math.max(1, kickers) * POINTS.spin * 1.5 + 500;
+  return (
+    0.4 * gate +
+    0.3 * pace +
+    0.15 * clamp(hp / 100) +
+    0.15 * clamp(style / styleRef)
+  );
 }
 
-// 評級看「拿到參考分的幾成」，長短雪道才能用同一把尺。
-// 要拿 S 得比參考分更好：滑得比標準時間快，或靠特技、閃避的倍率多拿分
-export function grade(total, course) {
-  const p = total / refScore(course);
-  return p >= 1 ? "S" : p >= 0.85 ? "A" : p >= 0.65 ? "B" : "C";
-}
+export const GRADES = [
+  ["S", 0.9],
+  ["A", 0.75],
+  ["B", 0.55],
+];
+export const grade = (rate) =>
+  (GRADES.find(([, min]) => rate >= min) || ["C"])[0];

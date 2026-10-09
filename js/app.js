@@ -5,7 +5,14 @@ import { buildWorld, DIFF, STEP } from "./world.js";
 import { createHazards } from "./hazards.js";
 import { createSkier, BOARDS } from "./skier.js";
 import { FACTS, COMPARE_ROWS } from "./facts.js";
-import { POINTS, comboMult, parTime, finalScore, grade } from "./score.js";
+import {
+  POINTS,
+  comboMult,
+  parTime,
+  finalScore,
+  rating,
+  grade,
+} from "./score.js";
 import {
   initAudio,
   updateAudio,
@@ -616,23 +623,21 @@ function signTexture(kind) {
 }
 
 // 第一次滑才出現的操作提示：[出現的秒數, 文字]
+// 只在第一次滑的開頭出現三句，之後不再打擾
 const TIPS = (
   lowPower
     ? [
-        "按住 ◀ ▶ 轉彎，從旗門中間穿過去",
-        "按住「蹲」加速，「煞車」減速",
-        "穩穩按住 ◀ 或 ▶ 就是刻滑，換邊的瞬間會加速",
-        "按「跳」起跳，騰空時按鈕會變成特技：↺ ↻ 轉體、前翻、後翻",
-        "連續過旗門會疊高倍率，漏掉或被撞就歸零",
+        "◀ ▶ 轉彎，從旗門中間穿過",
+        "按住 ◀ 或 ▶ 是刻滑，換邊會加速",
+        "跳起來後，按鈕會變成特技鍵",
       ]
     : [
-        "← → 轉彎，從旗門中間穿過去",
-        "↑ 蹲低加速，↓ 煞車",
-        "穩穩按住 ← 或 → 就是刻滑，換邊的瞬間會加速",
-        "空白鍵起跳，騰空時再按一次做特技，按住 ↑ 或 ↓ 變成空翻",
-        "連續過旗門會疊高倍率，漏掉或被撞就歸零",
+        "← → 轉彎，↑ 蹲低加速，↓ 煞車",
+        "按住 ← 或 → 是刻滑，換邊會加速",
+        "空白鍵起跳，騰空再按一次做特技",
       ]
-).map((text, i) => [0.6 + i * 5.5, text]);
+).map((text, i) => [0.5 + i * 3.6, text]);
+let tipsSeen = !!store.get("tips");
 
 function startSki() {
   clearGame();
@@ -683,7 +688,10 @@ function startSki() {
   G.dipV = 0;
   G.warned = null;
   G.res = null;
-  G.tipI = store.get("tips") ? TIPS.length : 0;
+  G.tipI = tipsSeen ? TIPS.length : 0;
+  // 一開滑就記下來：中途離開、重來，或瀏覽器不給存，都不會再跳一次
+  tipsSeen = true;
+  store.set("tips", "1");
   G.skier = createSkier(board, { blob: lowPower });
   grp.add(G.skier.group);
 
@@ -1446,7 +1454,6 @@ function present(dt, alpha) {
     el.classList.remove("show");
     void el.offsetWidth;
     el.classList.add("show");
-    if (G.tipI === TIPS.length) store.set("tips", "1");
   }
 }
 
@@ -1624,9 +1631,16 @@ function finish(failed = false) {
       hp: G.hp,
       failed,
     }),
-    gr = failed
-      ? ""
-      : grade(fin.total, { gates: G.gates.length, kickers: G.kickers.length }),
+    rate = rating({
+      hits: G.hits,
+      gates: G.gates.length,
+      time: G.t,
+      par: G.par,
+      hp: G.hp,
+      style: G.pts.trick + G.pts.dodge,
+      kickers: G.kickers.length,
+    }),
+    gr = failed ? "" : grade(rate),
     plus = (n) => `+${n.toLocaleString()}`,
     gates = `旗門 ${G.hits}/${G.gates.length}`;
   G.failed = failed;
@@ -1658,6 +1672,7 @@ function finish(failed = false) {
             ? `刷新最快時間，先前 ${fmtTime(old.time)}`
             : `個人最佳 ${old.score.toLocaleString()} 分・${fmtTime(old.time)}`;
   }
+  if (!failed) note += `　｜　評級達成 ${Math.round(rate * 100)}%`;
   $("rBest").textContent = note;
   $("rStats").innerHTML = (
     failed
@@ -1854,44 +1869,41 @@ document.addEventListener("visibilitychange", () => {
   if (document.hidden) setPaused(true);
 });
 
+// 用實體按鍵位置判斷：開著中文輸入法時 e.key 不是英文字母，WASD 會失效
 const keyMap = {
   ArrowLeft: "left",
-  a: "left",
-  A: "left",
+  KeyA: "left",
   ArrowRight: "right",
-  d: "right",
-  D: "right",
+  KeyD: "right",
   ArrowDown: "brake",
-  s: "brake",
-  S: "brake",
+  KeyS: "brake",
   ArrowUp: "tuck",
-  w: "tuck",
-  W: "tuck",
+  KeyW: "tuck",
 };
 const releaseInput = () =>
   Object.keys(input).forEach((k) => (input[k] = false));
 const onKey = (down) => (e) => {
   const playing = mode === "ski" || mode === "count";
   if (down && !e.repeat && !$("app").hidden) {
-    const k = e.key.toLowerCase();
-    if (k === "escape") {
+    const k = e.code;
+    if (k === "Escape") {
       if (playing) return setPaused(!paused);
       if (mode !== "explore") return backToExplore();
     }
-    if (k === "p" && playing) return setPaused(!paused);
-    if (k === "r" && (playing || mode === "result")) return startSki();
-    if (k === "m") {
+    if (k === "KeyP" && playing) return setPaused(!paused);
+    if (k === "KeyR" && (playing || mode === "result")) return startSki();
+    if (k === "KeyM") {
       setMuted(!isMuted());
       return renderMute();
     }
   }
   if (paused) return;
-  if (e.key === " " && playing) {
+  if (e.code === "Space" && playing) {
     e.preventDefault();
     if (down && !e.repeat) pressJump();
     return;
   }
-  const k = keyMap[e.key];
+  const k = keyMap[e.code];
   if (!k || !playing) return;
   input[k] = down;
   e.preventDefault();
