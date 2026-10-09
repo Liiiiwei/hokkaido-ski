@@ -21,7 +21,7 @@
       rel="icon"
       href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%276%27 fill=%27%230e1b2c%27/%3E%3Cpath d=%27M4 24 13 9l5 8 3-4 7 11z%27 fill=%27%23fff%27/%3E%3C/svg%3E"
     />
-    <link rel="stylesheet" href="css/style.css" />
+    <link rel="stylesheet" href="css/style.css?v=20261009d" />
     <script type="importmap">
       {
         "imports": {
@@ -194,6 +194,7 @@
           </div>
         </div>
         <div id="pop"></div>
+        <div id="gains" aria-hidden="true"></div>
         <div id="tip"></div>
       </div>
 
@@ -213,6 +214,20 @@
             <em>最高連段 <i id="rCombo">0</i></em>
           </div>
           <dl id="rStats"></dl>
+          <form id="rSave" class="save" hidden>
+            <input
+              id="rWho"
+              maxlength="12"
+              placeholder="輸入名字"
+              aria-label="名字"
+              autocomplete="nickname"
+              enterkeyhint="done"
+            />
+            <button id="btnSave" class="solid">記錄分數</button>
+          </form>
+          <p id="rSaveMsg" class="save-msg" role="status" hidden></p>
+          <p class="board-title">這條雪道的排行榜</p>
+          <ol id="rBoard" class="board"></ol>
           <div class="actions">
             <button id="btnOther" class="ghost dark">換一條雪道</button>
             <button id="btnAgain" class="solid">再滑一次</button>
@@ -252,6 +267,6 @@
       </div>
     </div>
 
-    <script type="module" src="js/app.js"></script>
+    <script type="module" src="js/app.js?v=20261009d"></script>
   </body>
 </html>

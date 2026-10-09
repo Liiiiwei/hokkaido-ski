@@ -1,10 +1,12 @@
 // 首頁內容、3D 總覽、飛覽與滑行遊戲
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/OrbitControls.js";
-import { buildWorld, DIFF, STEP } from "./world.js";
-import { createHazards } from "./hazards.js";
-import { createSkier, BOARDS } from "./skier.js";
-import { FACTS, COMPARE_ROWS } from "./facts.js";
+// 改了任何一個 js 或 css 檔，就把這裡與 index.html 的 ?v= 一起換新。
+// 不換的話瀏覽器會拿新的 app.js 配快取裡舊的模組，整頁載不起來
+import { buildWorld, DIFF, STEP } from "./world.js?v=20261009d";
+import { createHazards } from "./hazards.js?v=20261009d";
+import { createSkier, BOARDS } from "./skier.js?v=20261009d";
+import { FACTS, COMPARE_ROWS } from "./facts.js?v=20261009d";
 import {
   POINTS,
   comboMult,
@@ -12,7 +14,7 @@ import {
   finalScore,
   rating,
   grade,
-} from "./score.js";
+} from "./score.js?v=20261009d";
 import {
   initAudio,
   updateAudio,
@@ -21,7 +23,7 @@ import {
   setMuted,
   isMuted,
   sfx,
-} from "./audio.js";
+} from "./audio.js?v=20261009d";
 
 const $ = (id) => document.getElementById(id);
 const KEYS = ["teine", "kokusai"];
@@ -41,7 +43,10 @@ const store = {
   set(k, v) {
     try {
       localStorage.setItem(k, v);
-    } catch {}
+      return true;
+    } catch {
+      return false;
+    }
   },
 };
 
@@ -688,6 +693,7 @@ function startSki() {
   G.dipV = 0;
   G.warned = null;
   G.res = null;
+  $("gains").textContent = "";
   G.tipI = tipsSeen ? TIPS.length : 0;
   // 一開滑就記下來：中途離開、重來，或瀏覽器不給存，都不會再跳一次
   tipsSeen = true;
@@ -1136,13 +1142,25 @@ function follow(pos, target, dt, rate) {
 }
 
 // 得分：先乘上目前的連段倍率，再把連段往上加一
+const KIND = { gate: "旗門", trick: "特技", dodge: "閃避" };
+// 每次得分都在畫面上飄一行：加了多少、為什麼、吃到幾倍
+function gain(pts, label, mult) {
+  const box = $("gains"),
+    el = document.createElement("div");
+  el.innerHTML = `<b>+${pts.toLocaleString()}</b><span>${label}</span>${mult > 1 ? `<i>×${mult}</i>` : ""}`;
+  box.append(el);
+  while (box.children.length > 4) box.firstChild.remove();
+  el.addEventListener("animationend", () => el.remove());
+}
 function award(kind, base, label) {
-  const pts = Math.round(base * comboMult(G.combo));
+  const mult = comboMult(G.combo),
+    pts = Math.round(base * mult);
+  gain(pts, label || KIND[kind], mult);
   G.pts[kind] += pts;
   G.score += pts;
   G.combo++;
   G.bestCombo = Math.max(G.bestCombo, G.combo);
-  if (label) popup(`${label} +${pts}`);
+  if (label) popup(label);
   else if (G.combo % 4 === 0 && G.combo <= 12)
     popup(`連段倍率 ×${comboMult(G.combo)}`);
   bump("hScore");
@@ -1674,8 +1692,11 @@ function finish(failed = false) {
   }
   if (!failed) note += `　｜　評級達成 ${Math.round(rate * 100)}%`;
   $("rBest").textContent = note;
-  $("rStats").innerHTML = (
-    failed
+  // 前幾列是會加進總分的項目，結算時一列一列亮起來、加上去
+  const parts = failed
+      ? [G.pts.gate, G.pts.trick, G.pts.dodge]
+      : [fin.timeBonus, G.pts.gate, G.pts.trick, G.pts.dodge, fin.hpBonus],
+    rows = failed
       ? [
           [gates, plus(G.pts.gate)],
           ["特技", plus(G.pts.trick)],
@@ -1691,13 +1712,22 @@ function finish(failed = false) {
           ["閃避", plus(G.pts.dodge)],
           ["剩餘體力", plus(fin.hpBonus)],
           ["最高時速", `${Math.round(G.max * 3.6)} km/h`],
-        ]
-  )
-    .map((s) => `<div><dt>${s[0]}</dt><dd>${s[1]}</dd></div>`)
+        ];
+  $("rStats").innerHTML = rows
+    .map(
+      (s, i) =>
+        `<div${i < parts.length ? ' class="add"' : ""}><dt>${s[0]}</dt><dd>${s[1]}</dd></div>`,
+    )
     .join("");
+  $("rSave").hidden = true;
+  $("rSaveMsg").hidden = true;
+  $("rWho").value = store.get("name") || "";
+  renderBoard(r);
   G.res = {
     total: fin.total,
     grade: gr,
+    parts,
+    time: failed ? 0 : G.t,
     t: 0,
     shown: -1,
     tick: 0,
@@ -1713,8 +1743,15 @@ function stepResult(dt) {
   const res = G.res;
   if (!res || res.done) return;
   res.t += dt;
-  const u = Math.min(1, Math.max(0, (res.t - 0.5) / 1.2)),
-    val = Math.round(res.total * (1 - (1 - u) ** 3));
+  const x = Math.max(0, res.t - 0.5) / 0.42,
+    i = Math.min(res.parts.length, Math.floor(x)),
+    rows = $("rStats").children;
+  let val = 0;
+  for (let k = 0; k < i; k++) val += res.parts[k];
+  if (i < res.parts.length)
+    val += Math.round(res.parts[i] * (1 - (1 - (x - i)) ** 3));
+  for (let k = 0; k <= i && k < res.parts.length; k++)
+    rows[k].classList.add("in");
   if (val !== res.shown) {
     res.shown = val;
     $("rScore").textContent = val.toLocaleString();
@@ -1723,11 +1760,89 @@ function stepResult(dt) {
       sfx.tick();
     }
   }
-  if (u >= 1) {
+  if (i >= res.parts.length) {
     res.done = true;
+    $("rScore").textContent = res.total.toLocaleString();
     $("rGrade").classList.add("show");
     if (res.grade) sfx.grade(res.grade === "S");
+    $("rSave").hidden = false;
   }
+}
+
+/* ---------- 排行榜：每條雪道各一份，存在這台裝置的瀏覽器裡 ---------- */
+const boardKey = (run) => `board:${key}:${run.id}`;
+function readBoard(run) {
+  try {
+    const list = JSON.parse(store.get(boardKey(run)) || "[]");
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+}
+// 列出前五名；自己剛記的那筆不在前五也補在最後一列
+function renderBoard(run, mine) {
+  const list = readBoard(run),
+    ol = $("rBoard");
+  ol.textContent = "";
+  if (!list.length) {
+    const li = document.createElement("li");
+    li.className = "empty";
+    li.textContent = "還沒有人留下紀錄，當第一個";
+    return ol.append(li);
+  }
+  const at = mine ? list.findIndex((e) => e.at === mine) : -1,
+    show = list.slice(0, 5).map((e, i) => [i, e]);
+  if (at >= 5) show.push([at, list[at]]);
+  for (const [i, e] of show) {
+    const li = document.createElement("li");
+    if (i === at) li.className = "me";
+    for (const [cls, text] of [
+      ["rank", i + 1],
+      ["who", e.n],
+      ["g", e.g || "–"],
+      ["pts", Number(e.s).toLocaleString()],
+      ["time", e.t ? fmtTime(e.t) : "未完成"],
+    ]) {
+      const span = document.createElement("span");
+      span.className = cls;
+      span.textContent = text;
+      li.append(span);
+    }
+    ol.append(li);
+  }
+}
+function saveScore(e) {
+  e.preventDefault();
+  const res = G.res,
+    msg = $("rSaveMsg"),
+    name = $("rWho").value.trim().slice(0, 12);
+  if (!res || !res.done || res.saved) return;
+  const say = (text, bad) => {
+    msg.textContent = text;
+    msg.classList.toggle("bad", !!bad);
+    msg.hidden = false;
+  };
+  if (!name) {
+    say("先輸入名字再記錄", true);
+    return $("rWho").focus();
+  }
+  const entry = {
+      n: name,
+      s: res.total,
+      g: res.grade,
+      t: res.time,
+      at: Date.now(),
+    },
+    list = [...readBoard(G.run), entry].sort((a, b) => b.s - a.s).slice(0, 20);
+  if (!store.set(boardKey(G.run), JSON.stringify(list)))
+    return say("這個瀏覽器不允許儲存，紀錄沒有留下", true);
+  store.set("name", name);
+  res.saved = true;
+  $("rSave").hidden = true;
+  const rank = list.indexOf(entry) + 1;
+  say(rank ? `已記錄，排第 ${rank} 名` : "已記錄，這次沒有擠進前 20 名");
+  renderBoard(G.run, entry.at);
+  sfx.ui();
 }
 
 function backToExplore() {
@@ -1855,6 +1970,7 @@ $("btnFly").onclick = startFly;
 $("btnSki").onclick = startSki;
 $("btnAgain").onclick = startSki;
 $("btnOther").onclick = backToExplore;
+$("rSave").addEventListener("submit", saveScore);
 $("btnQuit").onclick = backToExplore;
 $("btnPause").onclick = () => setPaused(true);
 $("btnResume").onclick = () => setPaused(false);
@@ -1883,6 +1999,7 @@ const keyMap = {
 const releaseInput = () =>
   Object.keys(input).forEach((k) => (input[k] = false));
 const onKey = (down) => (e) => {
+  if (e.target instanceof HTMLInputElement) return; // 正在輸入名字，別當成快捷鍵
   const playing = mode === "ski" || mode === "count";
   if (down && !e.repeat && !$("app").hidden) {
     const k = e.code;
