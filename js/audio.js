@@ -140,6 +140,11 @@ export const sfx = {
     tone(f, 0.16, { type: "triangle", vol: 0.26 });
     tone(f * 1.5, 0.24, { type: "sine", vol: 0.2, at: 0.06 });
   },
+  // 旗門以外的得分：一聲跟著連段升調的短音
+  chain(combo) {
+    const f = note(SCALE[Math.min(SCALE.length - 1, combo)]);
+    tone(f * 2, 0.12, { type: "sine", vol: 0.14, at: 0.04 });
+  },
   miss() {
     tone(196, 0.22, { type: "square", vol: 0.1, to: 130 });
   },

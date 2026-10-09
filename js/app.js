@@ -3,10 +3,10 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/OrbitControls.js";
 // 改了任何一個 js 或 css 檔，就把這裡與 index.html 的 ?v= 一起換新。
 // 不換的話瀏覽器會拿新的 app.js 配快取裡舊的模組，整頁載不起來
-import { buildWorld, DIFF, STEP } from "./world.js?v=20261009g";
-import { createHazards } from "./hazards.js?v=20261009g";
-import { createSkier, BOARDS } from "./skier.js?v=20261009g";
-import { FACTS, COMPARE_ROWS } from "./facts.js?v=20261009g";
+import { buildWorld, DIFF, STEP } from "./world.js?v=20261009h";
+import { createHazards } from "./hazards.js?v=20261009h";
+import { createSkier, BOARDS } from "./skier.js?v=20261009h";
+import { FACTS, COMPARE_ROWS } from "./facts.js?v=20261009h";
 import {
   POINTS,
   comboMult,
@@ -14,7 +14,7 @@ import {
   finalScore,
   rating,
   grade,
-} from "./score.js?v=20261009g";
+} from "./score.js?v=20261009h";
 import {
   initAudio,
   updateAudio,
@@ -23,7 +23,7 @@ import {
   setMuted,
   isMuted,
   sfx,
-} from "./audio.js?v=20261009g";
+} from "./audio.js?v=20261009h";
 
 const $ = (id) => document.getElementById(id);
 const KEYS = ["teine", "kokusai"];
@@ -694,7 +694,9 @@ function startSki() {
   G.dipV = 0;
   G.warned = null;
   G.res = null;
-  $("gains").textContent = "";
+  $("sGain").textContent = "";
+  $("sGain").classList.remove("show");
+  scoreShown = 0;
   G.tipI = tipsSeen ? TIPS.length : 0;
   // 一開滑就記下來：中途離開、重來，或瀏覽器不給存，都不會再跳一次
   tipsSeen = true;
@@ -1142,27 +1144,28 @@ function follow(pos, target, dt, rate) {
   G.snap = false;
 }
 
+let scoreShown = 0; // 畫面上正在滾動的分數
 // 得分：先乘上目前的連段倍率，再把連段往上加一
 const KIND = { gate: "旗門", trick: "特技", dodge: "閃避" };
-// 每次得分都在畫面上飄一行：加了多少、為什麼、吃到幾倍
-function gain(pts, label, mult) {
-  const box = $("gains"),
-    el = document.createElement("div");
-  el.innerHTML = `<b>+${pts.toLocaleString()}</b><span>${label}</span>${mult > 1 ? `<i>×${mult}</i>` : ""}`;
-  box.append(el);
-  while (box.children.length > 4) box.firstChild.remove();
-  el.addEventListener("animationend", () => el.remove());
+// 每次得分只在連段列上換一行字：加了多少、為什麼。新的一筆直接頂掉舊的，不往畫面中間疊
+function gain(pts, label) {
+  const el = $("sGain");
+  el.innerHTML = `<b>+${pts.toLocaleString()}</b>${label}`;
+  replay(el, "show");
+  replay($("glow"), "hit");
 }
 function award(kind, base, label) {
   const mult = comboMult(G.combo),
     pts = Math.round(base * mult);
-  gain(pts, label || KIND[kind], mult);
+  gain(pts, label || KIND[kind]);
   G.pts[kind] += pts;
   G.score += pts;
   G.combo++;
   G.bestCombo = Math.max(G.bestCombo, G.combo);
-  if (label) popup(label);
-  else if (G.combo % 4 === 0 && G.combo <= 12)
+  // 旗門自己有跟著連段升調的音；其他得分補一聲同樣會升調的短音
+  if (kind !== "gate") sfx.chain(G.combo);
+  // 中央大字只留給倍率升級
+  if (G.combo % 4 === 0 && G.combo <= 12)
     popup(`連段倍率 ×${comboMult(G.combo)}`);
   bump("hScore");
 }
@@ -1170,12 +1173,17 @@ function breakCombo() {
   if (G.combo >= 2) bump("hCombo", "drop");
   G.combo = 0;
 }
+// 重播一個元素上的動畫
+function replay(el, cls) {
+  el.classList.remove(cls);
+  void el.offsetWidth;
+  el.classList.add(cls);
+}
 // 讓 HUD 上的數字跳一下
 function bump(id, cls = "pop") {
   const el = $(id).parentElement;
   el.classList.remove("pop", "drop");
-  void el.offsetWidth;
-  el.classList.add(cls);
+  replay(el, cls);
 }
 
 // 物理與判定：固定步長，一幀可能跑零到數次
@@ -1629,13 +1637,20 @@ function updateHud() {
   }
   $("hTime").textContent = fmtTime(G.t);
   $("hGate").textContent = `${G.hits}/${G.gates.length}`;
-  $("hScore").textContent = G.score.toLocaleString();
+  // 分數用滾的追上去，加分的感覺留在數字上
+  if (scoreShown !== G.score) {
+    const gap = G.score - scoreShown;
+    scoreShown = Math.abs(gap) < 2 ? G.score : scoreShown + gap * 0.3;
+    $("hScore").textContent = Math.round(scoreShown).toLocaleString();
+  }
   if (G.combo !== G.comboShown) {
     const el = $("hCombo");
     if (G.combo > G.comboShown && G.comboShown >= 0) bump("hCombo");
     G.comboShown = G.combo;
     el.textContent = `×${comboMult(G.combo)}`;
-    el.parentElement.dataset.heat =
+    // 連段條：十二段集滿就是最高倍率。熱度同時給連段列和畫面邊緣的光暈用
+    $("hChain").style.width = `${(Math.min(12, G.combo) / 12) * 100}%`;
+    $("hud").dataset.heat =
       G.combo >= 12 ? 3 : G.combo >= 8 ? 2 : G.combo >= 4 ? 1 : 0;
   }
 }

@@ -21,7 +21,7 @@
       rel="icon"
       href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%276%27 fill=%27%230e1b2c%27/%3E%3Cpath d=%27M4 24 13 9l5 8 3-4 7 11z%27 fill=%27%23fff%27/%3E%3C/svg%3E"
     />
-    <link rel="stylesheet" href="css/style.css?v=20261009g" />
+    <link rel="stylesheet" href="css/style.css?v=20261009h" />
     <script type="importmap">
       {
         "imports": {
@@ -171,9 +171,12 @@
           <div><span>剩餘</span><b id="hLeft">0</b> m</div>
           <div class="gates"><span>旗門</span><b id="hGate">0</b></div>
           <div class="score"><span>分數</span><b id="hScore">0</b></div>
-          <div class="combo" data-heat="0">
-            <span>倍率</span><b id="hCombo">×1</b>
-          </div>
+        </div>
+        <div id="glow" aria-hidden="true"></div>
+        <div id="streak">
+          <b id="hCombo">×1</b>
+          <div class="chain"><i id="hChain"></i></div>
+          <p id="sGain" aria-hidden="true"></p>
         </div>
         <div class="hud-profile">
           <svg
@@ -196,7 +199,6 @@
           </div>
         </div>
         <div id="pop"></div>
-        <div id="gains" aria-hidden="true"></div>
         <div id="tip"></div>
       </div>
 
@@ -269,6 +271,6 @@
       </div>
     </div>
 
-    <script type="module" src="js/app.js?v=20261009g"></script>
+    <script type="module" src="js/app.js?v=20261009h"></script>
   </body>
 </html>

@@ -1056,9 +1056,10 @@ footer {
 #pop {
   position: absolute;
   left: 50%;
-  top: 24%;
+  /* 貼在頂部資訊下方，不壓到前方的雪道 */
+  top: calc(max(14px, env(safe-area-inset-top)) + 132px);
   transform: translateX(-50%);
-  font: 900 clamp(1.6rem, 5vw, 2.8rem) var(--serif);
+  font: 900 clamp(1.15rem, 3vw, 2rem) var(--serif);
   color: #ffd23c;
   white-space: nowrap;
   opacity: 0;
@@ -1091,7 +1092,6 @@ footer {
   }
 }
 #hud.fly .score,
-#hud.fly .combo,
 #hud.fly #btnPause,
 #hud:not(.fly) #btnQuit {
   display: none;
@@ -1277,29 +1277,32 @@ h1 {
   }
   #mini {
     right: 12px;
-    width: 104px;
-    height: 104px;
+    width: 80px;
+    height: 80px;
   }
+  /* 時速和三項數據併成一排 */
   .hud-speed {
     left: 14px;
-    top: calc(max(14px, env(safe-area-inset-top)) + 58px);
+    top: calc(max(14px, env(safe-area-inset-top)) + 52px);
     bottom: auto;
   }
   .hud-speed b {
-    font-size: 3.4rem;
+    font-size: 2.5rem;
   }
   .hud-speed span {
-    font-size: 0.85rem;
+    display: block;
+    margin: 2px 0 0;
+    font-size: 0.62rem;
   }
   .hud-side {
-    left: 14px;
+    left: 84px;
     right: auto;
-    top: calc(max(14px, env(safe-area-inset-top)) + 116px);
+    top: calc(max(14px, env(safe-area-inset-top)) + 54px);
     bottom: auto;
     text-align: left;
     display: flex;
-    gap: 14px;
-    font-size: 0.8rem;
+    gap: 12px;
+    font-size: 0.72rem;
     line-height: 1.2;
   }
   .hud-side > div:first-child {
@@ -1311,7 +1314,7 @@ h1 {
     font-size: 0.62rem;
   }
   .hud-side b {
-    font-size: 1.25rem;
+    font-size: 1.15rem;
   }
   .touch {
     bottom: max(18px, env(safe-area-inset-bottom));
@@ -1330,7 +1333,7 @@ h1 {
     font-size: 0.9rem;
   }
   #pop {
-    top: 30%;
+    top: calc(max(14px, env(safe-area-inset-top)) + 196px);
   }
   #panel ul {
     scrollbar-width: none;
@@ -1380,7 +1383,7 @@ h1 {
 #warn {
   position: absolute;
   left: 50%;
-  top: calc(max(14px, env(safe-area-inset-top)) + 44px);
+  top: calc(max(14px, env(safe-area-inset-top)) + 82px);
   transform: translateX(-50%);
   display: flex;
   align-items: center;
@@ -1436,19 +1439,22 @@ h1 {
 @media (max-width: 760px), (max-height: 520px) {
   .hud-hp {
     left: 14px;
-    right: 130px;
-    top: calc(max(14px, env(safe-area-inset-top)) + 160px);
+    right: 112px;
+    top: calc(max(14px, env(safe-area-inset-top)) + 98px);
     transform: none;
-    font-size: 0.66rem;
+    font-size: 0.62rem;
   }
   .hud-hp div {
     flex: 1;
     width: auto;
-    max-width: 150px;
-    height: 10px;
+    max-width: 170px;
+    height: 7px;
+  }
+  .hud-hp b {
+    font-size: 0.95rem;
   }
   #warn {
-    top: calc(max(14px, env(safe-area-inset-top)) + 190px);
+    top: calc(max(14px, env(safe-area-inset-top)) + 154px);
     font-size: 0.86rem;
     padding: 6px 10px 6px 6px;
   }
@@ -1457,25 +1463,195 @@ h1 {
   #warn {
     top: calc(max(14px, env(safe-area-inset-top)) + 8px);
   }
+  #pop {
+    top: calc(max(14px, env(safe-area-inset-top)) + 52px);
+  }
 }
 
-/* 分數與連段倍率：倍率越高顏色越熱 */
-.hud-side .combo b {
-  display: inline-block;
+/* 連段列：放大的倍率、十二格連段條、最新一筆加分，全部收在畫面頂部。倍率越高顏色越熱 */
+#hud {
+  --heat: #fff;
+}
+#hud[data-heat="1"] {
+  --heat: #ffd23c;
+}
+#hud[data-heat="2"] {
+  --heat: #ff9a3c;
+}
+#hud[data-heat="3"] {
+  --heat: #ff5a1f;
+}
+#streak {
+  position: absolute;
+  left: 50%;
+  top: calc(max(14px, env(safe-area-inset-top)) + 36px);
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  /* 雪地和天空都很亮，要有深色底才看得見 */
+  padding: 3px 12px 3px 8px;
+  border-radius: 999px;
+  background: #0e1b2cb8;
+  text-shadow: none;
+}
+#hCombo {
+  min-width: 2.6ch;
+  text-align: right;
+  font: 700 2.1rem/1 var(--num);
+  font-variant-numeric: tabular-nums;
+  color: var(--heat);
   transition: color 0.2s;
 }
-.hud-side .combo[data-heat="1"] b {
-  color: #ffd23c;
-}
-.hud-side .combo[data-heat="2"] b {
-  color: #ff9a3c;
-}
-.hud-side .combo[data-heat="3"] b {
-  color: #ff5a1f;
+#hud[data-heat="3"] #hCombo {
   text-shadow: 0 0 14px #ff5a1f;
 }
-.hud-side .drop b {
+#streak .chain {
+  position: relative;
+  width: 168px;
+  height: 10px;
+  border-radius: 5px;
+  background: #0e1b2c99;
+  border: 1.5px solid #ffffffcc;
+  overflow: hidden;
+}
+#hChain {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--heat);
+  transition:
+    width 0.18s,
+    background 0.2s;
+}
+/* 每一段一條細線，每四段（倍率升一級）一條粗線 */
+#streak .chain::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-linear-gradient(
+      to right,
+      #0000 0 calc(100% / 3 - 2px),
+      #0e1b2c calc(100% / 3 - 2px) calc(100% / 3)
+    ),
+    repeating-linear-gradient(
+      to right,
+      #0000 0 calc(100% / 12 - 1px),
+      #0e1b2c88 calc(100% / 12 - 1px) calc(100% / 12)
+    );
+}
+#sGain {
+  position: absolute;
+  left: 100%;
+  top: 50%;
+  margin-left: 12px;
+  transform: translateY(-50%);
+  white-space: nowrap;
+  font: 700 0.95rem var(--sans);
+  opacity: 0;
+  padding: 3px 12px;
+  border-radius: 999px;
+  background: #0e1b2cb8;
+}
+#sGain b {
+  margin-right: 0.35em;
+  font: 700 1.5rem/1 var(--num);
+  color: #ffd23c;
+}
+#sGain.show {
+  animation: sgain 1.5s both;
+}
+@keyframes sgain {
+  0% {
+    opacity: 0;
+    transform: translate(-10px, -50%) scale(0.8);
+  }
+  10% {
+    opacity: 1;
+    transform: translate(0, -50%) scale(1.12);
+  }
+  20% {
+    transform: translate(0, -50%) scale(1);
+  }
+  80% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(0, -50%);
+  }
+}
+#streak.pop #hCombo {
+  animation: pop 0.35s;
+}
+#streak.pop .bar {
+  animation: barhit 0.35s;
+}
+@keyframes barhit {
+  30% {
+    transform: scaleY(1.7);
+    box-shadow: 0 0 14px var(--heat);
+  }
+}
+#streak.drop #hCombo {
   animation: drop 0.45s;
+}
+
+/* 畫面邊緣的熱度光暈：只亮在四周，餘光看得到，不蓋住雪道 */
+#glow {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  box-shadow: inset 0 0 clamp(40px, 9vmin, 110px) clamp(4px, 1.2vmin, 14px)
+    var(--heat);
+  transition: opacity 0.3s;
+}
+#hud[data-heat="1"] #glow {
+  opacity: 0.35;
+}
+#hud[data-heat="2"] #glow {
+  opacity: 0.55;
+}
+#hud[data-heat="3"] #glow {
+  opacity: 0.75;
+}
+#glow.hit {
+  animation: glowhit 0.4s;
+}
+@keyframes glowhit {
+  0% {
+    opacity: 1;
+    filter: brightness(1.6);
+  }
+}
+#hud.fly #streak,
+#hud.fly #glow {
+  display: none;
+}
+/* 手機：連段列靠左，排在體力條下面 */
+@media (max-width: 760px), (max-height: 520px) {
+  #streak {
+    left: 14px;
+    top: calc(max(14px, env(safe-area-inset-top)) + 126px);
+    transform: none;
+    gap: 8px;
+  }
+  #hCombo {
+    min-width: 0;
+    font-size: 1.7rem;
+  }
+  #streak .chain {
+    width: 96px;
+    height: 8px;
+  }
+  #sGain {
+    margin-left: 8px;
+    font-size: 0.82rem;
+  }
+  #sGain b {
+    font-size: 1.25rem;
+  }
 }
 @keyframes drop {
   20% {
@@ -1763,84 +1939,9 @@ h1 {
   font-size: 1.9rem;
 }
 
-/* 滑行中的加分浮字：靠在分數欄旁邊，不擋中間的視線。雪地和天空都很亮，要有深色底才看得見 */
-#gains {
-  position: absolute;
-  right: 20px;
-  bottom: 300px;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 6px;
-  pointer-events: none;
-}
-#gains div {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  padding: 6px 16px 7px;
-  border-radius: 999px;
-  background: #0e1b2ce0;
-  border: 2px solid #ffd23c;
-  box-shadow: 0 6px 20px #0e1b2c66;
-  white-space: nowrap;
-  color: #fff;
-  font: 700 1.05rem var(--sans);
-  text-shadow: none;
-  animation: gain 1.5s both;
-}
-#gains b {
-  font: 700 2.2rem/1 var(--num);
-  color: #ffd23c;
-}
-#gains i {
-  font: 700 1.4rem/1 var(--num);
-  font-style: normal;
-  color: #7dffb0;
-}
-@keyframes gain {
-  0% {
-    opacity: 0;
-    transform: translateY(18px) scale(0.7);
-  }
-  10% {
-    opacity: 1;
-    transform: translateY(0) scale(1.12);
-  }
-  18% {
-    transform: translateY(0) scale(1);
-  }
-  80% {
-    opacity: 1;
-    transform: translateY(-4px);
-  }
-  100% {
-    opacity: 0;
-    transform: translateY(-20px);
-  }
-}
-@media (max-aspect-ratio: 1/1) {
-  #gains {
-    right: auto;
-    bottom: auto;
-    left: 12px;
-    top: 252px;
-    align-items: flex-start;
-  }
-  #gains div {
-    padding: 4px 12px 5px;
-    font-size: 0.9rem;
-  }
-  #gains b {
-    font-size: 1.6rem;
-  }
-  #gains i {
-    font-size: 1.1rem;
-  }
-}
 /* 系統開了「減少動態效果」時，提示類的字還是要留在畫面上夠久 */
 @media (prefers-reduced-motion: reduce) {
-  #gains div {
+  #sGain.show {
     animation-duration: 1.5s !important;
   }
   #pop.show {
