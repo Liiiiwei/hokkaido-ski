@@ -1272,38 +1272,46 @@ h1 {
     padding-left: 12px;
     padding-right: 12px;
   }
+  .hud-top button {
+    padding: 0.4em 0.75em;
+    font-size: 0.8rem;
+  }
+  .hud-name {
+    font-size: 0.82rem;
+  }
   .hud-time {
-    font-size: 1.6rem;
+    font-size: 1.3rem;
   }
   #mini {
     right: 12px;
-    width: 80px;
-    height: 80px;
+    top: calc(max(14px, env(safe-area-inset-top)) + 38px);
+    width: 60px;
+    height: 60px;
   }
   /* 時速和三項數據併成一排 */
   .hud-speed {
     left: 14px;
-    top: calc(max(14px, env(safe-area-inset-top)) + 52px);
+    top: calc(max(14px, env(safe-area-inset-top)) + 40px);
     bottom: auto;
   }
   .hud-speed b {
-    font-size: 2.5rem;
+    font-size: 1.9rem;
   }
   .hud-speed span {
     display: block;
-    margin: 2px 0 0;
-    font-size: 0.62rem;
+    margin: 1px 0 0;
+    font-size: 0.56rem;
   }
   .hud-side {
-    left: 84px;
+    left: 68px;
     right: auto;
-    top: calc(max(14px, env(safe-area-inset-top)) + 54px);
+    top: calc(max(14px, env(safe-area-inset-top)) + 41px);
     bottom: auto;
     text-align: left;
     display: flex;
     gap: 12px;
-    font-size: 0.72rem;
-    line-height: 1.2;
+    font-size: 0.66rem;
+    line-height: 1.15;
   }
   .hud-side > div:first-child {
     display: none;
@@ -1311,10 +1319,10 @@ h1 {
   .hud-side span {
     display: block;
     margin: 0;
-    font-size: 0.62rem;
+    font-size: 0.56rem;
   }
   .hud-side b {
-    font-size: 1.15rem;
+    font-size: 1rem;
   }
   .touch {
     bottom: max(18px, env(safe-area-inset-bottom));
@@ -1333,7 +1341,7 @@ h1 {
     font-size: 0.9rem;
   }
   #pop {
-    top: calc(max(14px, env(safe-area-inset-top)) + 196px);
+    top: calc(max(14px, env(safe-area-inset-top)) + 162px);
   }
   #panel ul {
     scrollbar-width: none;
@@ -1439,22 +1447,24 @@ h1 {
 @media (max-width: 760px), (max-height: 520px) {
   .hud-hp {
     left: 14px;
-    right: 112px;
-    top: calc(max(14px, env(safe-area-inset-top)) + 98px);
+    right: 86px;
+    top: calc(max(14px, env(safe-area-inset-top)) + 80px);
     transform: none;
-    font-size: 0.62rem;
+    gap: 6px;
+    font-size: 0.56rem;
   }
   .hud-hp div {
     flex: 1;
     width: auto;
-    max-width: 170px;
-    height: 7px;
+    max-width: 150px;
+    height: 5px;
+    border-width: 1px;
   }
   .hud-hp b {
-    font-size: 0.95rem;
+    font-size: 0.8rem;
   }
   #warn {
-    top: calc(max(14px, env(safe-area-inset-top)) + 154px);
+    top: calc(max(14px, env(safe-area-inset-top)) + 128px);
     font-size: 0.86rem;
     padding: 6px 10px 6px 6px;
   }
@@ -1633,24 +1643,27 @@ h1 {
 @media (max-width: 760px), (max-height: 520px) {
   #streak {
     left: 14px;
-    top: calc(max(14px, env(safe-area-inset-top)) + 126px);
+    top: calc(max(14px, env(safe-area-inset-top)) + 97px);
     transform: none;
-    gap: 8px;
+    gap: 6px;
+    padding: 2px 9px 2px 7px;
   }
   #hCombo {
     min-width: 0;
-    font-size: 1.7rem;
+    font-size: 1.3rem;
   }
   #streak .chain {
-    width: 96px;
-    height: 8px;
+    width: 72px;
+    height: 6px;
+    border-width: 1px;
   }
   #sGain {
-    margin-left: 8px;
-    font-size: 0.82rem;
+    margin-left: 6px;
+    padding: 2px 9px;
+    font-size: 0.74rem;
   }
   #sGain b {
-    font-size: 1.25rem;
+    font-size: 1.05rem;
   }
 }
 @keyframes drop {
