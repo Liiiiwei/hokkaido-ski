@@ -124,6 +124,56 @@ function bone(m, a, b) {
   m.quaternion.setFromUnitVectors(UP, vD.copy(b).sub(a).normalize());
 }
 
+// 一片板子：從 z0 到 z1，兩頭收成圓弧並往上翹，板腰比兩頭窄，邊緣是圓的。
+// wide／waist 是兩頭與板腰的半寬，nose／tail 是板頭板尾圓弧的長度，noseUp／tailUp 是翹起的高度
+function plank(z0, z1, wide, waist, thick, nose, tail, noseUp, tailUp) {
+  const N = 20,
+    R = 6,
+    pos = [],
+    ix = [];
+  for (let j = 0; j <= N; j++) {
+    const t = j / N,
+      z = z0 + (z1 - z0) * t;
+    let k = 1,
+      up = 0;
+    for (const [d, len, rise] of [
+      [z1 - z, nose, noseUp],
+      [z - z0, tail, tailUp],
+    ])
+      if (d < len) {
+        const q = 1 - d / len;
+        k = Math.sqrt(Math.max(0.03, 1 - q * q));
+        up = rise * q * q;
+      }
+    const w = (waist + (wide - waist) * (t * 2 - 1) ** 2) * k;
+    for (const [x, y] of [
+      [-w, 0.006],
+      [-w * 0.86, thick],
+      [0, thick * 1.12],
+      [w * 0.86, thick],
+      [w, 0.006],
+      [0, 0],
+    ])
+      pos.push(x, y + up, z);
+    if (j)
+      for (let i = 0; i < R; i++) {
+        const a = (j - 1) * R + i,
+          b = (j - 1) * R + ((i + 1) % R),
+          c = j * R + i,
+          d = j * R + ((i + 1) % R);
+        ix.push(a, c, b, b, c, d);
+      }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  g.setIndex(ix);
+  g.computeVertexNormals();
+  return g;
+}
+const skiGeo = plank(-0.75, 1.2, 0.088, 0.07, 0.034, 0.36, 0.12, 0.16, 0.03),
+  skiBandGeo = plank(0.66, 0.78, 0.082, 0.082, 0.038, 0.001, 0.001, 0, 0),
+  toeGeo = new THREE.CapsuleGeometry(0.05, 0.1, 4, 10).rotateZ(Math.PI / 2);
+
 /** blob：腳下的假影子，沒有開即時陰影的裝置才需要 */
 export function createSkier(board = BOARDS[0], { blob = true } = {}) {
   const isBoard = board.kind === "board";
@@ -178,19 +228,12 @@ export function createSkier(board = BOARDS[0], { blob = true } = {}) {
   const feet = (isBoard ? [0.27, -0.27] : [0.22, -0.22]).map((x) => {
     const g = group(stance, x, 0.03, 0);
     if (!isBoard) {
-      mesh(new THREE.BoxGeometry(0.17, 0.04, 1.7), "ski", g, 0, 0, 0.12);
-      const tip = mesh(
-        new THREE.BoxGeometry(0.17, 0.04, 0.32),
-        "ski",
-        g,
-        0,
-        0.07,
-        1.1,
-      );
-      tip.rotation.x = -0.5;
-      mesh(new THREE.BoxGeometry(0.172, 0.042, 0.1), "white", g, 0, 0, 0.72);
-      mesh(new THREE.BoxGeometry(0.2, 0.07, 0.12), "dark", g, 0, 0.05, 0.24);
-      mesh(new THREE.BoxGeometry(0.2, 0.09, 0.1), "dark", g, 0, 0.06, -0.17);
+      // 雪板：板頭圓弧上翹、板腰略收，固定器前後各一塊
+      mesh(skiGeo, "ski", g, 0, -0.02, 0);
+      mesh(skiBandGeo, "white", g, 0, -0.018, 0);
+      mesh(toeGeo, "dark", g, 0, 0.045, 0.25);
+      const heel = mesh(toeGeo, "dark", g, 0, 0.055, -0.18);
+      heel.scale.set(1, 1.3, 1.2);
     }
     const boot = mesh(bootGeo, "dark", g, 0, 0.13, 0.04);
     boot.rotation.x = Math.PI / 2;
@@ -199,36 +242,44 @@ export function createSkier(board = BOARDS[0], { blob = true } = {}) {
     return g;
   });
   if (isBoard) {
+    // 滑雪板：兩頭圓弧上翹的一整片，中間一道色帶
     const deck = mesh(
-      new THREE.BoxGeometry(0.38, 0.05, 1.4),
+      plank(-0.8, 0.8, 0.195, 0.168, 0.04, 0.26, 0.26, 0.1, 0.1),
       "ski",
       lean,
       0,
-      0.03,
+      0.005,
       0,
     );
+    mesh(
+      plank(-0.09, 0.09, 0.172, 0.172, 0.044, 0.001, 0.001, 0, 0),
+      "white",
+      deck,
+    );
     for (const s of [1, -1]) {
-      const tip = mesh(
-        new THREE.CylinderGeometry(0.18, 0.18, 0.045, 16, 1, false, 0, Math.PI),
-        "ski",
-        deck,
-        0,
-        0.03,
-        s * 0.735,
-      );
-      tip.rotation.set(s * -0.28, s > 0 ? -Math.PI / 2 : Math.PI / 2, 0);
-      // 固定器
-      const bind = mesh(
-        new THREE.BoxGeometry(0.4, 0.05, 0.2),
-        "dark",
-        deck,
-        0,
-        0.045,
-        s * 0.25,
-      );
+      // 固定器：圓盤底座加一片弧形的背板
+      const bind = group(deck, 0, 0.045, s * 0.25);
       bind.rotation.y = 0.42;
+      mesh(new THREE.CylinderGeometry(0.16, 0.17, 0.03, 18), "dark", bind);
+      const back = mesh(
+        new THREE.CylinderGeometry(
+          0.15,
+          0.16,
+          0.2,
+          12,
+          1,
+          true,
+          Math.PI * 0.7,
+          Math.PI * 0.6,
+        ),
+        "dark",
+        bind,
+        0,
+        0.1,
+        0,
+      );
+      back.material.side = THREE.DoubleSide;
     }
-    mesh(new THREE.BoxGeometry(0.37, 0.047, 0.16), "white", deck, 0, 0, 0);
   }
 
   // 腿：大腿、膝蓋、小腿三件，每幀依髖部與腳的位置解出膝蓋
@@ -269,7 +320,7 @@ export function createSkier(board = BOARDS[0], { blob = true } = {}) {
   hem.rotation.x = Math.PI / 2;
   hem.scale.set(1, 0.9, 1);
   mesh(
-    new THREE.BoxGeometry(0.035, 0.52, 0.03),
+    new THREE.CapsuleGeometry(0.018, 0.5, 3, 8),
     "white",
     torso,
     0,
@@ -278,7 +329,7 @@ export function createSkier(board = BOARDS[0], { blob = true } = {}) {
   );
   for (const x of [-0.2, 0.2]) {
     const pocket = mesh(
-      new THREE.BoxGeometry(0.13, 0.03, 0.03),
+      new THREE.CapsuleGeometry(0.016, 0.1, 3, 8).rotateZ(Math.PI / 2),
       "trim",
       torso,
       x,
@@ -375,7 +426,9 @@ export function createSkier(board = BOARDS[0], { blob = true } = {}) {
     0.02,
   );
   neck.rotation.x = Math.PI / 2;
-  const tailGeo = new THREE.BoxGeometry(0.15, 0.045, 0.27);
+  const tailGeo = new THREE.CapsuleGeometry(0.07, 0.14, 4, 10)
+    .rotateX(Math.PI / 2)
+    .scale(1.05, 0.36, 1);
   tailGeo.translate(0, 0, -0.13);
   const tails = [];
   let tp = group(torso, 0.1, 0.78, -0.22);

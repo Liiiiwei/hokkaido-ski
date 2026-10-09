@@ -173,8 +173,54 @@ function coneGeo(r, h, seg) {
   g.setAttribute("normal", new THREE.Float32BufferAttribute(nor, 3));
   return g;
 }
-const boxAt = (w, h, d, x, y, z) =>
-  new THREE.BoxGeometry(w, h, d).translate(x, y, z);
+// 圓角方塊：邊和角都修成半徑 r 的圓弧，法線平滑。n 是每邊的分段數，
+// 4 的話圓角只有一段（小零件用），6 的話兩段（車廂、站房這種大面用）
+export function roundBox(w, h, d, r, x = 0, y = 0, z = 0, n = 4) {
+  const g = new THREE.BoxGeometry(w, h, d, n, n, n),
+    p = g.attributes.position,
+    nm = g.attributes.normal,
+    half = [w / 2, h / 2, d / 2],
+    e = 2 / n,
+    c = [0, 0, 0],
+    q = [0, 0, 0];
+  for (let i = 0; i < p.count; i++) {
+    let len = 0;
+    for (let k = 0; k < 3; k++) {
+      const v = p.getComponent(i, k),
+        a = Math.min(1, Math.abs(v) / half[k]),
+        flat = half[k] - r,
+        // 最靠外的幾格擠到圓角上，中間的格子攤在平面上
+        m = a <= e + 1e-6 ? (a / e) * flat : flat + (r * (a - e)) / (1 - e),
+        s = Math.sign(v);
+      c[k] = s * Math.min(m, flat);
+      q[k] = s * Math.max(0, m - flat);
+      len += q[k] * q[k];
+    }
+    len = Math.sqrt(len) || 1;
+    p.setXYZ(
+      i,
+      c[0] + (q[0] / len) * r + x,
+      c[1] + (q[1] / len) * r + y,
+      c[2] + (q[2] / len) * r + z,
+    );
+    nm.setXYZ(i, q[0] / len, q[1] / len, q[2] / len);
+  }
+  return g;
+}
+// 兩點之間的一根圓桿
+const Y_UP = new THREE.Vector3(0, 1, 0);
+function rod(r, a, b, seg = 6) {
+  const va = new THREE.Vector3(...a),
+    vb = new THREE.Vector3(...b),
+    dir = vb.clone().sub(va),
+    len = dir.length(),
+    g = new THREE.CylinderGeometry(r, r, len, seg, 1);
+  g.applyQuaternion(
+    new THREE.Quaternion().setFromUnitVectors(Y_UP, dir.normalize()),
+  );
+  va.add(vb).multiplyScalar(0.5);
+  return g.translate(va.x, va.y, va.z);
+}
 
 // 壓雪車留下的紋路：順著雪道的細溝，加上淡淡的橫向履帶痕
 let groomTex;
@@ -426,6 +472,154 @@ export function buildWorld(data, { lowPower = false } = {}) {
     return mask[(pz * mc.width + px) * 4] > 100;
   };
 
+  // 纜車配置：先決定站房與每根支柱的位置、高度，後面種樹與蓋模型都照這份走。
+  // 真實雪場的做法是支柱立在雪道外、地形隆起的地方補一根，纜線才不會貼地
+  const ARM = 2.3, // 纜線離支柱中心的距離
+    STATION_Y = 5.4, // 纜線進站的高度
+    TOWER_H = 11.5, // 支柱上纜線的標準高度
+    TOWER_MAX = 26,
+    NEAR = 26; // 離站房最近的支柱距離
+  const sagOf = (span) => Math.min(1.5, (span * span) / 5000); // 纜線中段的垂度
+  // 站房不能蓋在雪道上：離任何一條雪道太近就往外推開
+  const CLEAR = 20;
+  const offPiste = (x, z) => {
+    for (let pass = 0; pass < 3; pass++) {
+      let best = null,
+        bd = CLEAR;
+      for (const r of runs)
+        for (const q of r.pts) {
+          const d = Math.hypot(x - q[0], z - q[1]);
+          if (d < bd) ((bd = d), (best = q));
+        }
+      if (!best) break;
+      const ux = bd > 0.01 ? (x - best[0]) / bd : 1,
+        uz = bd > 0.01 ? (z - best[1]) / bd : 0;
+      x = best[0] + ux * (CLEAR + 1);
+      z = best[1] + uz * (CLEAR + 1);
+    }
+    return [x, z];
+  };
+  const layouts = data.lifts.map((l) => {
+    const [ax, az] = offPiste(...l.pts[0]),
+      [bx, bz] = offPiste(...l.pts[l.pts.length - 1]),
+      len = Math.hypot(bx - ax, bz - az),
+      dx = (bx - ax) / len,
+      dz = (bz - az) / len,
+      kind =
+        l.type === "gondola"
+          ? "gondola"
+          : l.type === "magic_carpet"
+            ? "carpet"
+            : "chair",
+      at = (t) => [ax + dx * t, az + dz * t],
+      // 纜線底下（含左右兩條）最高的地面
+      ground = (t) => {
+        let g = -1e9;
+        for (const o of [-ARM * 1.5, 0, ARM * 1.5]) {
+          const x = ax + dx * t - dz * o,
+            z = az + dz * t + dx * o;
+          g = Math.max(g, heightAt(x, z), surfaceAt(x, z));
+        }
+        return g;
+      };
+    const lay = { ax, az, bx, bz, len, dx, dz, kind, at, ground, nodes: [] };
+    if (kind === "carpet") return lay;
+    // 車廂底部離地至少要留的高度：人從底下滑過、跳起來都碰不到
+    const need = kind === "gondola" ? 9.2 : 7.8;
+    const ts = [];
+    if (len < NEAR * 3) ts.push(len / 2);
+    else {
+      const n = Math.max(1, Math.round((len - NEAR * 2) / 85));
+      for (let i = 0; i <= n; i++) ts.push(NEAR + ((len - NEAR * 2) * i) / n);
+    }
+    // 找離 t 最近、不在雪道上的位置（限制在 lo～hi 之間），找不到回傳 null
+    const offAt = (t, lo, hi) => {
+      for (let j = 0; j < 25; j++) {
+        const s = t + (j % 2 ? 1 : -1) * Math.ceil(j / 2) * 5; // 0、±5、±10…±60
+        if (s >= lo && s <= hi && !onPiste(...at(s))) return s;
+      }
+      return null;
+    };
+    const nodes = [{ t: 0, station: true }];
+    ts.forEach((t, i) => {
+      const edge = i === 0 || i === ts.length - 1,
+        s = offAt(t, NEAR - 8, len - NEAR + 8);
+      // 中段的支柱找不到雪道外的位置就先不立，跨距太長、纜線太低再由下面補
+      if (s == null && !edge) return;
+      const tt = s ?? t;
+      if (tt - nodes[nodes.length - 1].t > 16)
+        nodes.push({ t: tt, h: TOWER_H });
+    });
+    nodes.push({ t: len, station: true });
+    const top = (nd) => ground(nd.t) + (nd.station ? STATION_Y : nd.h);
+    for (let it = 0; it < 80; it++) {
+      let worst = null;
+      for (let i = 0; i < nodes.length - 1; i++) {
+        const A = nodes[i],
+          B = nodes[i + 1];
+        if (A.station || B.station) continue; // 進出站那一段本來就要降到地面
+        const span = B.t - A.t,
+          yA = top(A),
+          yB = top(B),
+          sag = sagOf(span);
+        for (let s = A.t + 5; s < B.t - 4; s += 5) {
+          const u = (s - A.t) / span,
+            y = yA + (yB - yA) * u - 4 * sag * u * (1 - u),
+            def = need - (y - ground(s));
+          if (def > 0.2 && (!worst || def > worst.def)) worst = { def, i, s };
+        }
+      }
+      if (!worst) break;
+      const A = nodes[worst.i],
+        B = nodes[worst.i + 1],
+        s = offAt(worst.s, A.t + 28, B.t - 28);
+      if (s != null) nodes.splice(worst.i + 1, 0, { t: s, h: TOWER_H });
+      else {
+        // 雪道外插不下新的，就把兩邊的支柱加高；加到頂了才退而求其次立在雪道上
+        const hA = A.h,
+          hB = B.h;
+        A.h = Math.min(TOWER_MAX, A.h + worst.def + 0.3);
+        B.h = Math.min(TOWER_MAX, B.h + worst.def + 0.3);
+        if (A.h === hA && B.h === hB) {
+          if (worst.s - A.t < 28 || B.t - worst.s < 28) break;
+          nodes.splice(worst.i + 1, 0, { t: worst.s, h: TOWER_H });
+        }
+      }
+    }
+    for (const nd of nodes) {
+      [nd.x, nd.z] = at(nd.t);
+      nd.g = heightAt(nd.x, nd.z);
+      nd.cy = top(nd);
+    }
+    lay.nodes = nodes;
+    return lay;
+  });
+  // 種樹用的遮罩：雪道之外，纜車線底下也要砍出一條空地
+  mx.lineCap = "butt";
+  mx.fillStyle = "#fff";
+  mx.lineWidth = 26 * mScale;
+  for (const l of layouts) {
+    mx.beginPath();
+    mx.moveTo((l.ax - x0) * mScale, (l.az - z0) * mScale);
+    mx.lineTo((l.bx - x0) * mScale, (l.bz - z0) * mScale);
+    mx.stroke();
+    for (const [x, z] of [
+      [l.ax, l.az],
+      [l.bx, l.bz],
+    ]) {
+      mx.beginPath();
+      mx.arc((x - x0) * mScale, (z - z0) * mScale, 16 * mScale, 0, 7);
+      mx.fill();
+    }
+  }
+  const treeMask = mx.getImageData(0, 0, mc.width, mc.height).data;
+  const noTree = (x, z) => {
+    const px = ((x - x0) * mScale) | 0,
+      pz = ((z - z0) * mScale) | 0;
+    if (px < 0 || pz < 0 || px >= mc.width || pz >= mc.height) return true;
+    return treeMask[(pz * mc.width + px) * 4] > 100;
+  };
+
   // 地形網格
   const pos = new Float32Array(gw * gh * 3),
     uv = new Float32Array(gw * gh * 2);
@@ -636,7 +830,7 @@ export function buildWorld(data, { lowPower = false } = {}) {
       z < z0 + 5 ||
       x > x0 + spanX - 5 ||
       z > z0 + spanZ - 5 ||
-      onPiste(x, z)
+      noTree(x, z)
     )
       return;
     spots.push(x, z);
@@ -686,121 +880,250 @@ export function buildWorld(data, { lowPower = false } = {}) {
   }
   scene.add(conifers, birches);
 
-  // 纜車：支柱帶橫臂，上下行各一條纜線，車廂與吊椅沿纜線方向擺
+  // 纜車：站房、支柱、纜線、車廂與吊椅都照前面算好的配置蓋
   const cabins = [];
   const liftGroup = new THREE.Group();
-  const ARM = 2.3, // 纜線離支柱中心的距離
-    liftMat = new THREE.MeshLambertMaterial({ vertexColors: true }),
+  const liftMat = new THREE.MeshLambertMaterial({ vertexColors: true }),
     cableMat = new THREE.LineBasicMaterial({ color: "#2b3540" });
-  const towerGeo = mergeColored([
+  const STEEL = "#6b7783",
+    DARK = "#2b3540",
+    SNOW = "#f4f8fc";
+  // 支柱拆成三段：柱身可以依高度拉長，柱腳與柱頭不變形
+  const colGeo = mergeColored([
     [
-      new THREE.CylinderGeometry(0.42, 0.68, 12, 6).translate(0, 6, 0),
-      "#5b6773",
+      new THREE.CylinderGeometry(0.32, 0.56, 1, 12, 1, true).translate(
+        0,
+        0.5,
+        0,
+      ),
+      STEEL,
     ],
-    [boxAt(ARM * 2 + 1, 0.4, 0.55, 0, 12, 0), "#48535e"],
-    [boxAt(ARM * 2 + 1.1, 0.14, 0.7, 0, 12.27, 0), "#eef4f7"], // 橫臂上的積雪
-    [boxAt(0.3, 0.5, 2, -ARM, 11.75, 0), "#2b3540"],
-    [boxAt(0.3, 0.5, 2, ARM, 11.75, 0), "#2b3540"],
-    [boxAt(1.5, 0.5, 1.5, 0, 0.25, 0), "#8b959f"],
   ]);
-  const gondolaGeo = mergeColored([
-    [boxAt(3, 2.7, 3.6, 0, 0, 0), "#ff5a1f"],
-    [boxAt(3.06, 1.05, 3.1, 0, 0.35, 0), "#22364b"], // 兩側車窗
-    [boxAt(2.5, 1.05, 3.66, 0, 0.35, 0), "#22364b"], // 前後車窗
-    [boxAt(3.2, 0.24, 3.8, 0, 1.45, 0), "#f4f8fc"],
-    [boxAt(3.04, 0.2, 3.64, 0, -1.2, 0), "#b83c10"],
-    [boxAt(0.2, 1.9, 0.2, 0, 2.5, 0), "#56626e"],
-    [boxAt(0.5, 0.22, 1, 0, 3.4, 0), "#2b3540"],
+  const footGeo = mergeColored([
+    [roundBox(1.8, 0.8, 1.8, 0.18, 0, 0.3, 0), "#9aa3ab"],
+    // 柱腳包一圈防撞墊，雪場裡每根支柱都有
+    [
+      new THREE.CapsuleGeometry(0.85, 1.3, 4, 12).translate(0, 1.9, 0),
+      "#2f6fb5",
+    ],
+    [
+      new THREE.CylinderGeometry(0.87, 0.87, 0.3, 12, 1, true).translate(
+        0,
+        1.9,
+        0,
+      ),
+      "#f2c230",
+    ],
   ]);
-  const chairGeo = mergeColored([
-    [boxAt(2.7, 0.16, 0.75, 0, 0, 0), "#f2c230"],
-    [boxAt(2.7, 0.85, 0.14, 0, 0.48, -0.36), "#f2c230"],
-    [boxAt(0.1, 0.6, 0.1, -1.3, 0.3, 0.1), "#56626e"],
-    [boxAt(0.1, 0.6, 0.1, 1.3, 0.3, 0.1), "#56626e"],
-    [boxAt(2.7, 0.08, 0.08, 0, 0.62, 0.42), "#56626e"], // 安全桿
-    [boxAt(2.4, 0.08, 0.08, 0, -0.62, 0.5), "#56626e"], // 腳踏桿
-    [boxAt(0.08, 0.62, 0.08, 0, -0.31, 0.5), "#56626e"],
-    [boxAt(0.12, 2.4, 0.12, 0, 1.3, -0.3), "#56626e"],
-    [boxAt(0.4, 0.18, 0.8, 0, 2.5, -0.3), "#2b3540"],
-  ]);
-  const stationGeo = mergeColored([
-    [boxAt(8, 4.2, 10, 0, 2.1, 0), "#3a4a5c"],
-    [boxAt(8.1, 1.3, 7, 0, 2.6, 0), "#9fc6e6"], // 側窗
-    [boxAt(8.8, 0.5, 11, 0, 4.45, 0), "#ff5a1f"],
-    [boxAt(9, 0.3, 11.2, 0, 4.85, 0), "#f4f8fc"], // 屋頂積雪
-  ]);
-  // 站房不能蓋在雪道上：離任何一條雪道太近就往外推開
-  const CLEAR = 20;
-  const offPiste = (x, z) => {
-    for (let pass = 0; pass < 3; pass++) {
-      let best = null,
-        bd = CLEAR;
-      for (const r of runs)
-        for (const q of r.pts) {
-          const d = Math.hypot(x - q[0], z - q[1]);
-          if (d < bd) ((bd = d), (best = q));
-        }
-      if (!best) break;
-      const ux = bd > 0.01 ? (x - best[0]) / bd : 1,
-        uz = bd > 0.01 ? (z - best[1]) / bd : 0;
-      x = best[0] + ux * (CLEAR + 1);
-      z = best[1] + uz * (CLEAR + 1);
-    }
-    return [x, z];
+  const sheaves = (side) => {
+    const x = ARM * side,
+      parts = [
+        [roundBox(0.24, 0.3, 2.7, 0.1, x, 0.42, 0), DARK],
+        [rod(0.09, [x, 0.42, 0], [x, 0.8, 0]), DARK],
+      ];
+    for (const z of [-1.05, -0.35, 0.35, 1.05])
+      parts.push([
+        new THREE.CylinderGeometry(0.2, 0.2, 0.14, 10)
+          .rotateZ(Math.PI / 2)
+          .translate(x, 0.2, z),
+        "#1d242b",
+      ]);
+    return parts;
   };
-  data.lifts.forEach((l) => {
-    const [a, b] = l.pts,
-      len = Math.hypot(b[0] - a[0], b[1] - a[1]),
-      n = Math.max(2, Math.round(len / 90)),
-      dx = (b[0] - a[0]) / len,
-      dz = (b[1] - a[1]) / len,
-      yaw = Math.atan2(dx, dz),
-      gondola = l.type === "gondola",
-      lines = { [-1]: [], 1: [] };
-    for (let i = 0; i <= n; i++) {
-      let x = a[0] + ((b[0] - a[0]) * i) / n,
-        z = a[1] + ((b[1] - a[1]) * i) / n;
-      if (i === 0 || i === n) [x, z] = offPiste(x, z);
-      const y = heightAt(x, z);
-      const t = new THREE.Mesh(
-        i === 0 || i === n ? stationGeo : towerGeo,
-        liftMat,
-      );
-      t.position.set(x, y - 0.3, z);
-      t.rotation.y = yaw;
-      liftGroup.add(t);
-      for (const side of [-1, 1])
-        lines[side].push(
-          new THREE.Vector3(
-            x - dz * ARM * side,
-            y + (i === 0 || i === n ? 5.4 : 11.5),
-            z + dx * ARM * side,
+  const headGeo = mergeColored([
+    [roundBox(ARM * 2 + 1.1, 0.4, 0.55, 0.14, 0, 0.9, 0), "#4f5a65"],
+    [roundBox(ARM * 2 + 1.0, 0.2, 0.62, 0.1, 0, 1.14, 0), SNOW], // 橫臂上的積雪
+    [new THREE.SphereGeometry(0.36, 12, 8).translate(0, 0.95, 0), "#4f5a65"],
+    ...sheaves(-1),
+    ...sheaves(1),
+  ]);
+  // 車廂：圓角的八人座箱型車廂，四面都是窗
+  const gondolaGeo = mergeColored([
+    [roundBox(3, 2.7, 3.6, 0.5, 0, 0, 0, 6), "#ff5a1f"],
+    [roundBox(3.08, 1.15, 2.5, 0.16, 0, 0.32, 0), "#22364b"], // 兩側車窗
+    [roundBox(1.9, 1.15, 3.68, 0.16, 0, 0.32, 0), "#22364b"], // 前後車窗
+    [roundBox(3.06, 0.14, 3.66, 0.06, 0, -0.55, 0), "#ffd9c7"], // 腰線
+    [roundBox(2.6, 0.34, 3.2, 0.16, 0, 1.36, 0), SNOW],
+    [roundBox(2.2, 0.2, 2.8, 0.1, 0, -1.38, 0), "#7a2a0c"],
+    [roundBox(0.7, 0.24, 1.3, 0.1, 0, 1.6, 0), "#56626e"],
+    [rod(0.1, [0, 1.6, 0], [0, 3.36, 0], 8), "#56626e"],
+    [
+      new THREE.CapsuleGeometry(0.16, 0.9, 4, 10)
+        .rotateX(Math.PI / 2)
+        .translate(0, 3.4, 0),
+      DARK,
+    ],
+  ]);
+  // 四人座吊椅：鋼管骨架、椅墊、安全桿與腳踏桿
+  const FRAME = "#56626e";
+  const chairGeo = mergeColored([
+    [roundBox(2.7, 0.2, 0.78, 0.09, 0, 0, 0), "#f2c230"],
+    [roundBox(2.7, 0.8, 0.18, 0.09, 0, 0.5, -0.38), "#f2c230"],
+    [rod(0.05, [-1.38, -0.05, 0.36], [-1.38, 0.95, -0.42]), FRAME],
+    [rod(0.05, [1.38, -0.05, 0.36], [1.38, 0.95, -0.42]), FRAME],
+    [rod(0.05, [-1.38, 0.95, -0.42], [1.38, 0.95, -0.42]), FRAME],
+    [rod(0.04, [-1.38, 0.62, 0.44], [1.38, 0.62, 0.44]), FRAME], // 安全桿
+    [rod(0.04, [-1.38, 0.62, 0.44], [-1.38, 0.9, -0.3]), FRAME],
+    [rod(0.04, [1.38, 0.62, 0.44], [1.38, 0.9, -0.3]), FRAME],
+    [rod(0.04, [-1.2, -0.62, 0.52], [1.2, -0.62, 0.52]), FRAME], // 腳踏桿
+    [rod(0.04, [0, 0.62, 0.44], [0, -0.62, 0.52]), FRAME],
+    [rod(0.07, [0, 0.95, -0.42], [0, 2.45, -0.1], 8), FRAME],
+    [
+      new THREE.CapsuleGeometry(0.12, 0.7, 4, 10)
+        .rotateX(Math.PI / 2)
+        .translate(0, 2.5, -0.1),
+      DARK,
+    ],
+  ]);
+  // 站房：兩頭開口讓車廂進出，纜線與轉盤都收在屋簷底下。牆往地下多蓋一截，蓋在斜坡上才不會懸空
+  const stationGeo = mergeColored([
+    [roundBox(9.6, 11.4, 9.5, 0.9, 0, 1.7, 0, 6), "#dfe5ea"],
+    [roundBox(9.9, 5, 9.8, 0.3, 0, -1.9, 0), "#8d97a1"], // 水泥基座
+    [roundBox(8.2, 6.2, 9.7, 0.5, 0, 3.6, 0), "#18222c"], // 車廂進出的開口
+    [roundBox(9.8, 1.4, 5.6, 0.2, 0, 4.6, 0), "#9fc6e6"], // 側窗
+    [roundBox(10.4, 0.8, 10.3, 0.35, 0, 7.5, 0), "#ff5a1f"],
+    [roundBox(10.2, 0.6, 10.1, 0.3, 0, 8.0, 0), SNOW], // 屋頂積雪
+  ]);
+
+  const towers = [],
+    stations = [];
+  const hangOf = { gondola: 3.5, chair: 2.6 };
+  for (const l of layouts) {
+    const { dx, dz, len } = l,
+      yaw = Math.atan2(dx, dz);
+    if (l.kind === "carpet") {
+      // 魔毯：貼著地面的輸送帶，兩側有矮護欄
+      const parts = [],
+        n = Math.max(2, Math.round(len / 4)),
+        pt = (i, o, up) => {
+          const [x, z] = l.at((len * i) / n),
+            px = x - dz * o,
+            pz = z + dx * o;
+          return [px, Math.max(heightAt(px, pz), surfaceAt(px, pz)) + up, pz];
+        };
+      for (let i = 0; i < n; i++) {
+        const a = new THREE.Vector3(...pt(i, 0, 0.12)),
+          b = new THREE.Vector3(...pt(i + 1, 0, 0.12)),
+          d = b.clone().sub(a),
+          belt = roundBox(1.5, 0.22, d.length() + 0.1, 0.08);
+        belt.applyQuaternion(
+          new THREE.Quaternion().setFromUnitVectors(
+            new THREE.Vector3(0, 0, 1),
+            d.normalize(),
           ),
-        ); // 兩端降進站房
+        );
+        a.add(b).multiplyScalar(0.5);
+        parts.push([belt.translate(a.x, a.y, a.z), i % 2 ? "#39444f" : DARK]);
+        for (const o of [-0.95, 0.95]) {
+          parts.push([
+            rod(0.06, pt(i, o, 0.85), pt(i + 1, o, 0.85)),
+            "#ff5a1f",
+          ]);
+          parts.push([rod(0.05, pt(i, o, 0), pt(i, o, 0.85)), FRAME]);
+        }
+      }
+      liftGroup.add(new THREE.Mesh(mergeColored(parts), liftMat));
+      continue;
     }
-    for (const side of [-1, 1])
-      liftGroup.add(
-        new THREE.Line(
-          new THREE.BufferGeometry().setFromPoints(lines[side]),
-          cableMat,
-        ),
-      );
-    const count = Math.max(2, Math.round(len / (gondola ? 130 : 170)));
-    for (let i = 0; i < count; i++) {
-      const dir = i % 2 ? 1 : -1, // 一邊上山、一邊下山
-        mesh = new THREE.Mesh(gondola ? gondolaGeo : chairGeo, liftMat);
-      mesh.rotation.y = yaw + (dir > 0 ? 0 : Math.PI);
-      liftGroup.add(mesh);
-      cabins.push({
-        mesh,
-        path: lines[dir],
-        phase: i / count,
-        speed: (gondola ? 5 : 3) / len,
-        dir,
-        hang: gondola ? 3.5 : 2.6,
+    for (const nd of l.nodes)
+      (nd.station ? stations : towers).push({ ...nd, yaw });
+    // 纜線先水平出站再往第一根支柱爬升，才不會斜斜穿過站房屋簷
+    const EXIT = 7,
+      first = l.nodes[0],
+      last = l.nodes[l.nodes.length - 1],
+      mid = (t, base) => {
+        const [x, z] = l.at(t);
+        return { t, x, z, cy: Math.max(base.cy, l.ground(t) + 6) };
+      },
+      route = [
+        first,
+        mid(EXIT, first),
+        ...l.nodes.slice(1, -1),
+        mid(len - EXIT, last),
+        last,
+      ];
+    const lines = {};
+    for (const side of [-1, 1]) {
+      const pts = [];
+      route.forEach((nd, i) => {
+        const p = new THREE.Vector3(
+          nd.x - dz * ARM * side,
+          nd.cy,
+          nd.z + dx * ARM * side,
+        );
+        if (i) {
+          // 兩根支柱之間的纜線會自然下垂
+          const a = pts[pts.length - 1],
+            sag = sagOf(nd.t - route[i - 1].t);
+          for (let k = 1; k < 6; k++) {
+            const u = k / 6,
+              q = a.clone().lerp(p, u);
+            q.y -= 4 * sag * u * (1 - u);
+            pts.push(q);
+          }
+        }
+        pts.push(p);
       });
+      const cum = [0];
+      for (let i = 1; i < pts.length; i++)
+        cum.push(cum[i - 1] + pts[i].distanceTo(pts[i - 1]));
+      lines[side] = { pts, cum, total: cum[cum.length - 1] };
+      liftGroup.add(
+        new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), cableMat),
+      );
     }
+    // 每個方向固定間距掛一台，上山下山錯開
+    const gap = (l.kind === "gondola" ? 100 : 60) * (lowPower ? 1.6 : 1),
+      per = Math.max(1, Math.round(len / gap));
+    for (const dir of [-1, 1])
+      for (let i = 0; i < per; i++)
+        cabins.push({
+          kind: l.kind,
+          path: lines[dir],
+          phase: (i + (dir > 0 ? 0 : 0.5)) / per,
+          speed: (l.kind === "gondola" ? 5 : 3) / len,
+          dir,
+          hang: hangOf[l.kind],
+          yaw: yaw + (dir > 0 ? 0 : Math.PI),
+          i: 0,
+        });
+  }
+  const cm = new THREE.Matrix4(),
+    cq = new THREE.Quaternion(),
+    cs = new THREE.Vector3(1, 1, 1),
+    cp = new THREE.Vector3();
+  const instanced = (geo, list, place) => {
+    const m = new THREE.InstancedMesh(geo, liftMat, list.length);
+    list.forEach((t, i) => {
+      cs.set(1, 1, 1);
+      place(t);
+      cq.setFromAxisAngle(Y_UP, t.yaw);
+      m.setMatrixAt(i, cm.compose(cp, cq, cs));
+    });
+    m.frustumCulled = false; // 散在整座山上，不值得逐台判斷
+    liftGroup.add(m);
+    return m;
+  };
+  instanced(stationGeo, stations, (t) => cp.set(t.x, t.g - 0.3, t.z));
+  instanced(footGeo, towers, (t) => cp.set(t.x, t.g - 0.5, t.z));
+  instanced(headGeo, towers, (t) => cp.set(t.x, t.cy, t.z));
+  instanced(colGeo, towers, (t) => {
+    cp.set(t.x, t.g - 0.5, t.z);
+    cs.set(1, t.cy + 0.95 - (t.g - 0.5), 1);
   });
+  const fleets = {};
+  for (const kind of ["gondola", "chair"]) {
+    const list = cabins.filter((c) => c.kind === kind);
+    if (!list.length) continue;
+    const m = new THREE.InstancedMesh(
+      kind === "gondola" ? gondolaGeo : chairGeo,
+      liftMat,
+      list.length,
+    );
+    m.frustumCulled = false;
+    list.forEach((c, i) => ((c.mesh = m), (c.idx = i)));
+    liftGroup.add((fleets[kind] = m));
+  }
   scene.add(liftGroup);
 
   // 落雪
@@ -867,11 +1190,22 @@ export function buildWorld(data, { lowPower = false } = {}) {
     for (const cb of cabins) {
       let f = (cb.phase + t * cb.speed * cb.dir) % 1;
       if (f < 0) f += 1;
-      const u = f * (cb.path.length - 1),
-        i = Math.min(cb.path.length - 2, u | 0);
-      cb.mesh.position.copy(tmp.lerpVectors(cb.path[i], cb.path[i + 1], u - i));
-      cb.mesh.position.y -= cb.hang;
+      // 照實際距離走，支柱間距不一樣車速也不會忽快忽慢
+      const { pts, cum, total } = cb.path,
+        dist = f * total;
+      let i = cb.i;
+      while (i > 0 && cum[i] > dist) i--;
+      while (i < cum.length - 2 && cum[i + 1] < dist) i++;
+      cb.i = i;
+      tmp.lerpVectors(
+        pts[i],
+        pts[i + 1],
+        (dist - cum[i]) / (cum[i + 1] - cum[i] || 1),
+      );
+      cm.makeRotationY(cb.yaw).setPosition(tmp.x, tmp.y - cb.hang, tmp.z);
+      cb.mesh.setMatrixAt(cb.idx, cm);
     }
+    for (const k in fleets) fleets[k].instanceMatrix.needsUpdate = true;
   }
 
   return {
@@ -883,6 +1217,7 @@ export function buildWorld(data, { lowPower = false } = {}) {
     piste,
     mapLayer,
     liftGroup,
+    lifts: layouts,
     segs: data.segs,
     center,
     radius,

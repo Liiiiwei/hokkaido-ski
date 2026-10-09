@@ -3,10 +3,10 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/OrbitControls.js";
 // 改了任何一個 js 或 css 檔，就把這裡與 index.html 的 ?v= 一起換新。
 // 不換的話瀏覽器會拿新的 app.js 配快取裡舊的模組，整頁載不起來
-import { buildWorld, DIFF, STEP } from "./world.js?v=20261010k";
-import { createHazards } from "./hazards.js?v=20261010k";
-import { createSkier, BOARDS } from "./skier.js?v=20261010k";
-import { FACTS, COMPARE_ROWS } from "./facts.js?v=20261010k";
+import { buildWorld, DIFF, STEP } from "./world.js?v=20261010l";
+import { createHazards } from "./hazards.js?v=20261010l";
+import { createSkier, BOARDS } from "./skier.js?v=20261010l";
+import { FACTS, COMPARE_ROWS } from "./facts.js?v=20261010l";
 import {
   POINTS,
   comboMult,
@@ -14,7 +14,7 @@ import {
   finalScore,
   rating,
   grade,
-} from "./score.js?v=20261010k";
+} from "./score.js?v=20261010l";
 import {
   initAudio,
   updateAudio,
@@ -24,7 +24,7 @@ import {
   setVolume,
   isMuted,
   sfx,
-} from "./audio.js?v=20261010k";
+} from "./audio.js?v=20261010l";
 
 const $ = (id) => document.getElementById(id);
 const KEYS = ["teine", "kokusai"];
@@ -374,6 +374,11 @@ function select(i) {
 }
 
 const GATE_W = 6.5; // 旗門半寬（公尺）
+// 跳台：長、寬、起跳點高度，以及坡面在 u（0 起點 → 1 起跳點）處的高度
+const KL = 7,
+  KW = 7.5,
+  KH = 1.5,
+  kickY = (u) => KH * u * (0.3 + 0.7 * u);
 
 /* ---------- 小地圖 ---------- */
 // 以自己為中心、前進方向朝上，看得到前方約 300 公尺的彎道、旗門與跳台
@@ -616,49 +621,60 @@ function ground(x, z) {
   return { x, y: world.heightAt(x, z), z };
 }
 // 立在地面的桿子：往下多埋一截，斜坡上不會懸空；桿頂加一顆圓頭
-const capGeo = new THREE.SphereGeometry(1, 10, 8);
+// 桿腳包一圈防撞墊、堆一小堆雪，和雪場裡真的旗門、拱門一樣
+const capGeo = new THREE.SphereGeometry(1, 16, 12),
+  padGeo = new THREE.CapsuleGeometry(1, 2.6, 4, 14),
+  moundMat = new THREE.MeshStandardMaterial({
+    color: "#f4f9ff",
+    roughness: 0.9,
+  });
 function post(f, h, rad, mat) {
   const m = new THREE.Mesh(
-    new THREE.CylinderGeometry(rad, rad * 1.25, h + 3, 8),
+    new THREE.CylinderGeometry(rad, rad * 1.2, h + 3, 14),
     mat,
   );
   m.position.set(f.x, f.y + (h - 3) / 2, f.z);
   m.castShadow = true;
   const cap = new THREE.Mesh(capGeo, mat);
-  cap.scale.setScalar(rad * 1.5);
+  cap.scale.setScalar(rad * 1.6);
   cap.position.y = (h + 3) / 2;
-  m.add(cap);
+  const base = -(h - 3) / 2, // 地面在桿子自己座標裡的高度
+    pad = new THREE.Mesh(padGeo, mat);
+  pad.scale.setScalar(rad * 2.4);
+  pad.position.y = base + rad * 5.5;
+  const mound = new THREE.Mesh(capGeo, moundMat);
+  mound.scale.set(rad * 6, rad * 2.2, rad * 6);
+  mound.position.y = base;
+  mound.receiveShadow = true;
+  m.add(cap, pad, mound);
   return m;
 }
 // 橫幅：四個角接在兩根桿頂，地面一高一低也不會脫節。
 // 從「a 在左、b 在右」那一側看是正面，圖樣橫向重複 rep 次
+// 布料中段會微微下垂，不是一塊硬板子
 function spanBanner(a, b, top, h, mat, rep = 1) {
-  const g = new THREE.BufferGeometry();
-  g.setAttribute(
-    "position",
-    new THREE.Float32BufferAttribute(
-      [
-        a.x,
-        a.y + top,
-        a.z,
-        b.x,
-        b.y + top,
-        b.z,
-        a.x,
-        a.y + top - h,
-        a.z,
-        b.x,
-        b.y + top - h,
-        b.z,
-      ],
-      3,
-    ),
-  );
-  g.setAttribute(
-    "uv",
-    new THREE.Float32BufferAttribute([0, 1, rep, 1, 0, 0, rep, 0], 2),
-  );
-  g.setIndex([0, 2, 1, 1, 2, 3]);
+  const g = new THREE.BufferGeometry(),
+    N = 12,
+    pos = [],
+    uv = [],
+    ix = [],
+    sag = Math.min(0.4, Math.hypot(b.x - a.x, b.z - a.z) * 0.018);
+  for (let i = 0; i <= N; i++) {
+    const u = i / N,
+      x = a.x + (b.x - a.x) * u,
+      z = a.z + (b.z - a.z) * u,
+      y = a.y + (b.y - a.y) * u + top - sag * 4 * u * (1 - u);
+    pos.push(x, y, z, x, y - h, z);
+    uv.push(u * rep, 1, u * rep, 0);
+    if (i) {
+      const k = i * 2;
+      ix.push(k - 2, k - 1, k, k, k - 1, k + 1);
+    }
+  }
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+  g.setIndex(ix);
+  g.computeVertexNormals();
   const m = new THREE.Mesh(g, mat);
   m.castShadow = true;
   return m;
@@ -1041,24 +1057,55 @@ function startSki(quick = false) {
   }
   // 跳台：排在旗門之間
   G.kickers = [];
-  const KL = 7,
-    KW = 7.5,
-    KH = 1.5;
+  // 雪堆出來的跳台：坡面是越往上越陡的弧線，兩側與背面都是圓滑的雪坡
   const wedge = new THREE.BufferGeometry();
-  const A = [-KW / 2, 0, -KL],
-    B2 = [KW / 2, 0, -KL],
-    C = [-KW / 2, 0, 0],
-    D = [KW / 2, 0, 0],
-    E = [-KW / 2, KH, 0],
-    F = [KW / 2, KH, 0];
-  wedge.setAttribute(
-    "position",
-    new THREE.Float32BufferAttribute(
-      [A, E, B2, B2, E, F, C, D, E, D, F, E, A, C, E, B2, F, D].flat(),
-      3,
-    ),
-  );
-  wedge.computeVertexNormals();
+  {
+    const half = KW / 2,
+      cols = [
+        [-half - 1.5, 0],
+        [-half - 0.8, 0.5],
+        [-half - 0.2, 0.92],
+        [-half + 0.5, 1],
+        [0, 1],
+        [half - 0.5, 1],
+        [half + 0.2, 0.92],
+        [half + 0.8, 0.5],
+        [half + 1.5, 0],
+      ],
+      rows = [];
+    for (let i = 0; i <= 12; i++)
+      rows.push([-KL + (KL * i) / 12, kickY(i / 12)]);
+    rows.push([0.35, KH * 0.86], [0.9, KH * 0.42], [1.4, KH * 0.1], [1.8, 0]);
+    const pos = [],
+      ix = [],
+      nc = cols.length;
+    rows.forEach(([z, f], j) => {
+      const end = j === 0 || j === rows.length - 1;
+      for (const [x, k] of cols) pos.push(x, f * k - (end || !k ? 0.5 : 0), z); // 邊緣往下多埋一截
+      if (j)
+        for (let i = 1; i < nc; i++) {
+          const a = (j - 1) * nc + i - 1,
+            b = j * nc + i - 1;
+          ix.push(a, b, a + 1, a + 1, b, b + 1);
+        }
+    });
+    wedge.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    wedge.setIndex(ix);
+    wedge.computeVertexNormals();
+  }
+  // 貼在坡面上的色帶：四個角各自取坡面高度
+  const stripe = (x0, x1, u0, u1, n) => {
+    const v = [],
+      at = (x, u) => [x, kickY(u) + 0.035, -KL + KL * u];
+    for (let i = 0; i < n; i++) {
+      const a = u0 + ((u1 - u0) * i) / n,
+        b = u0 + ((u1 - u0) * (i + 1)) / n;
+      v.push(at(x0, a), at(x0, b), at(x1, a), at(x1, a), at(x0, b), at(x1, b));
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(v.flat(), 3));
+    return g;
+  };
   const wedgeMat = new THREE.MeshStandardMaterial({
     color: "#f4f9ff",
     roughness: 0.9,
@@ -1070,9 +1117,12 @@ function startSki(quick = false) {
   });
   const poleMat = new THREE.MeshLambertMaterial({ color: "#22303f" });
   // 起跳線、角旗：遠遠就看得出跳台的位置與寬度
-  const guideGeo = new THREE.BoxGeometry(0.24, 0.04, Math.hypot(KL, KH)),
-    guideMat = new THREE.MeshBasicMaterial({ color: "#1f6feb" }),
-    flagPoleGeo = new THREE.CylinderGeometry(0.045, 0.045, KH + 1.7, 6),
+  const lipGeo = stripe(-KW / 2, KW / 2, 0.93, 0.99, 1),
+    guideMat = new THREE.MeshBasicMaterial({
+      color: "#1f6feb",
+      side: THREE.DoubleSide,
+    }),
+    flagPoleGeo = new THREE.CylinderGeometry(0.05, 0.06, KH + 1.7, 10),
     flagGeo = new THREE.BufferGeometry();
   flagGeo.setAttribute(
     "position",
@@ -1086,18 +1136,22 @@ function startSki(quick = false) {
     k.position.set(p.x, y - 0.25, p.z);
     k.rotation.set(Math.atan2(y - ya, 3), Math.atan2(p.tx, p.tz), 0, "YXZ");
     k.receiveShadow = true;
-    const lip = new THREE.Mesh(new THREE.BoxGeometry(KW, 0.12, 0.3), lipMat);
-    lip.position.set(0, KH, -0.1);
-    k.add(lip);
+    k.add(new THREE.Mesh(lipGeo, lipMat));
     for (const side of [-1, 1]) {
-      const guide = new THREE.Mesh(guideGeo, guideMat);
-      guide.position.set(side * (KW / 2 - 0.5), KH / 2 + 0.04, -KL / 2);
-      guide.rotation.x = -Math.atan2(KH, KL);
+      const x = side * (KW / 2 - 0.5),
+        guide = new THREE.Mesh(
+          stripe(x - 0.12, x + 0.12, 0.04, 0.9, 8),
+          guideMat,
+        );
       const pole = new THREE.Mesh(flagPoleGeo, poleMat);
-      pole.position.set(side * (KW / 2 + 0.3), (KH + 1.7) / 2, -0.1);
+      pole.position.set(side * (KW / 2 + 0.6), (KH + 1.7) / 2 - 0.4, -0.1);
       pole.castShadow = true;
+      const cap = new THREE.Mesh(capGeo, poleMat);
+      cap.scale.setScalar(0.09);
+      cap.position.y = (KH + 1.7) / 2;
+      pole.add(cap);
       const flag = new THREE.Mesh(flagGeo, lipMat);
-      flag.position.set(side * (KW / 2 + 0.3), KH + 1.7, -0.1);
+      flag.position.set(side * (KW / 2 + 0.6), KH + 1.25, -0.1);
       k.add(guide, pole, flag);
     }
     grp.add(k);
@@ -1250,6 +1304,11 @@ function syncR() {
   R.ang = G.pang = G.ang;
 }
 
+// 雪面的實際高度：地形內插與三角網格兩種算法取高的那個
+const snowTop = (x, z) => Math.max(world.heightAt(x, z), world.surfaceAt(x, z));
+const SKI_F = 1.5, // 板頭在人前方多遠（公尺）
+  SKI_B = 1.1, // 板尾在人後方多遠
+  SKI_LIFT = 0.15; // 壓雪紋路鋪在地形上方 0.1，再留一點餘裕給坡度轉折
 function skierPos(out) {
   G.run.at(R.s, P);
   out.set(P.x - P.tz * R.d, 0, P.z + P.tx * R.d);
@@ -1264,9 +1323,17 @@ function placeSkier(dt, cam = "ski") {
     s = Math.sin(R.ang);
   const hx = P.tx * c - P.tz * s,
     hz = P.tz * c + P.tx * s; // 實際行進方向
-  const ahead = world.heightAt(pos.x + hx * 3, pos.z + hz * 3);
+  // 雪板要整片貼在雪道表面上：傾角用板頭與板尾兩點的高度算，
+  // 人再墊高到壓雪紋路那一層上面，陡坡與坡度轉折處板子才不會陷進雪裡
+  const yF = snowTop(pos.x + hx * SKI_F, pos.z + hz * SKI_F),
+    yB = snowTop(pos.x - hx * SKI_B, pos.z - hz * SKI_B);
   const k = G.snap ? 1 : 1 - Math.exp(-dt * 10);
-  G.pitch += (Math.atan2(pos.y - ahead, 3) - G.pitch) * k;
+  G.pitch += (Math.atan2(yB - yF, SKI_F + SKI_B) - G.pitch) * k;
+  pos.y =
+    Math.max(
+      snowTop(pos.x, pos.z),
+      yB + ((yF - yB) * SKI_B) / (SKI_F + SKI_B),
+    ) + SKI_LIFT;
   const sk = G.skier.group;
   sk.position.copy(pos);
   sk.rotation.set(G.pitch, Math.atan2(hx, hz), 0, "YXZ");
@@ -1511,7 +1578,7 @@ function simulate(dt) {
     let ramp = 0;
     for (const k of G.kickers) {
       const u = (G.s - (k.s - k.len)) / k.len;
-      if (u > 0 && u < 1 && Math.abs(G.d - k.d) < k.w / 2) ramp = k.h * u;
+      if (u > 0 && u < 1 && Math.abs(G.d - k.d) < k.w / 2) ramp = kickY(u);
     }
     if (ramp > 0) {
       G.y = ramp;
