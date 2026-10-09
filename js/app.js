@@ -3,10 +3,10 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/OrbitControls.js";
 // 改了任何一個 js 或 css 檔，就把這裡與 index.html 的 ?v= 一起換新。
 // 不換的話瀏覽器會拿新的 app.js 配快取裡舊的模組，整頁載不起來
-import { buildWorld, DIFF, STEP } from "./world.js?v=20261010c";
-import { createHazards } from "./hazards.js?v=20261010c";
-import { createSkier, BOARDS } from "./skier.js?v=20261010c";
-import { FACTS, COMPARE_ROWS } from "./facts.js?v=20261010c";
+import { buildWorld, DIFF, STEP } from "./world.js?v=20261010d";
+import { createHazards } from "./hazards.js?v=20261010d";
+import { createSkier, BOARDS } from "./skier.js?v=20261010d";
+import { FACTS, COMPARE_ROWS } from "./facts.js?v=20261010d";
 import {
   POINTS,
   comboMult,
@@ -14,7 +14,7 @@ import {
   finalScore,
   rating,
   grade,
-} from "./score.js?v=20261010c";
+} from "./score.js?v=20261010d";
 import {
   initAudio,
   updateAudio,
@@ -23,7 +23,7 @@ import {
   setMuted,
   isMuted,
   sfx,
-} from "./audio.js?v=20261010c";
+} from "./audio.js?v=20261010d";
 
 const $ = (id) => document.getElementById(id);
 const KEYS = ["teine", "kokusai"];
@@ -504,6 +504,7 @@ function setMode(m) {
   show("hud", m !== "explore");
   show("result", m === "result");
   show("count", m === "count");
+  show("cdGoals", m === "count");
   if (m !== "ski") {
     quietAudio();
     $("speedfx").style.opacity = 0;
@@ -520,6 +521,7 @@ function setPaused(on) {
   if (on === paused || (on && mode !== "ski" && mode !== "count")) return;
   paused = on;
   show("pause", on);
+  if (on) renderGoals("pGoals");
   suspendAudio(on);
   if (on) releaseInput();
 }
@@ -697,7 +699,76 @@ const TIPS = (
 ).map((text, i) => [0.5 + i * 3.6, text]);
 let tipsSeen = !!store.get("tips");
 
-function startSki() {
+/* ---------- 每局目標：三個小挑戰，只記完成數，不影響分數與排行榜 ---------- */
+const GOAL_POOL = [
+  {
+    id: "gate6",
+    text: "連續通過 6 個旗門",
+    need: 6,
+    get: () => G.stat.gateBest,
+  },
+  { id: "flip2", text: "做 2 次空翻", need: 2, get: () => G.stat.flips },
+  { id: "spin2", text: "做 2 次 360 轉體", need: 2, get: () => G.stat.spins },
+  { id: "combo10", text: "連段達到 10", need: 10, get: () => G.bestCombo },
+  { id: "near2", text: "驚險閃過 2 次", need: 2, get: () => G.stat.near },
+  { id: "carve3", text: "節奏刻滑 3 次", need: 3, get: () => G.stat.carves },
+  { id: "hp80", text: "體力 80 以上完賽", end: () => G.hp >= 80 },
+  { id: "clean", text: "全程不撞到東西", end: () => G.stat.crashes === 0 },
+  {
+    id: "gates",
+    text: "最多只漏 1 個旗門",
+    end: () => G.gates.length - G.hits <= 1,
+  },
+];
+const goalTotal = () => parseInt(store.get("goals")) || 0;
+let goalKeep = null; // 同一條雪道重來時，還沒完成的目標留著再挑戰
+function pickGoals(run, gates) {
+  if (goalKeep?.run === run && goalKeep.list.some((g) => !g.done))
+    return goalKeep.list;
+  const pool = GOAL_POOL.filter((g) => g.id !== "gate6" || gates >= 6),
+    list = [];
+  while (list.length < 3)
+    list.push({
+      ...pool.splice(Math.floor(Math.random() * pool.length), 1)[0],
+      done: false,
+    });
+  goalKeep = { run, list };
+  return list;
+}
+function checkGoals(atEnd) {
+  for (const g of G.goals) {
+    if (g.done || !(g.end ? atEnd && g.end() : g.get() >= g.need)) continue;
+    g.done = true;
+    store.set("goals", String(goalTotal() + 1));
+    if (!atEnd) popup(`目標達成　${g.text}`);
+  }
+}
+function renderGoals(id) {
+  $(id).innerHTML = G.goals
+    .map(
+      (g) =>
+        `<li${g.done ? ' class="done"' : ""}>${g.text}${
+          g.done || g.end ? "" : `<b>${Math.min(g.need, g.get())}/${g.need}</b>`
+        }</li>`,
+    )
+    .join("");
+}
+
+// 分段時間：記下自己最快那次每個旗門的通過時間，之後每過一門就比一次
+const splitKey = (run) => `splits:${key}:${run.id}`;
+function readSplits(run) {
+  const [t, list] = (store.get(splitKey(run)) || "").split("|"),
+    time = parseFloat(t);
+  return time > 0 && list ? { time, at: list.split(",").map(Number) } : null;
+}
+function showSplit(diff) {
+  const el = $("hSplit");
+  el.textContent = `${diff < 0 ? "−" : "+"}${Math.abs(diff).toFixed(2)}`;
+  el.className = diff < 0 ? "fast" : "slow";
+  replay(el, "show");
+}
+
+function startSki(quick = false) {
   clearGame();
   initAudio();
   const r = sel,
@@ -722,8 +793,21 @@ function startSki() {
   G.comboShown = -1;
   G.bestCombo = 0;
   G.par = parTime(r.L, +r.avg || 10);
-  G.cd = 3.2;
+  // 重來的人已經看過起點了，倒數只留一拍
+  G.cd = quick ? 1.2 : 3.2;
   G.cdShown = "";
+  G.stat = {
+    gateRun: 0,
+    gateBest: 0,
+    flips: 0,
+    spins: 0,
+    near: 0,
+    carves: 0,
+    crashes: 0,
+  };
+  G.splits = [];
+  G.ref = readSplits(r);
+  $("hSplit").classList.remove("show");
   G.snap = true;
   G.pitch = 0;
   G.push = 0;
@@ -781,6 +865,8 @@ function startSki() {
     grp.add(spanBanner(feet[0], feet[1], 4, 0.95, mats[1], 2));
     G.gates.push({ s, d, mats, done: false, hit: false });
   }
+  G.goals = pickGoals(r, G.gates.length);
+  renderGoals("cdGoals");
   // 雪道邊界桿：橘色桿身，頂端色帶左紅右綠，餘光就分得出哪一側
   const edgeN = Math.ceil(r.L / 12) * 2,
     edge = new THREE.InstancedMesh(
@@ -1228,6 +1314,7 @@ function award(kind, base, label) {
   if (G.combo % 4 === 0 && G.combo <= 12)
     popup(`連段倍率 ×${comboMult(G.combo)}`);
   bump("hScore");
+  checkGoals(false);
 }
 function breakCombo() {
   if (G.combo >= 2) bump("hCombo", "drop");
@@ -1278,7 +1365,10 @@ function simulate(dt) {
       sfx.edge(G.chain);
       buzz(6);
       burst(5);
-      if (G.chain % 3 === 0) award("trick", POINTS.carve, "節奏刻滑");
+      if (G.chain % 3 === 0) {
+        G.stat.carves++;
+        award("trick", POINTS.carve, "節奏刻滑");
+      }
     }
   } else if (steer) G.carveT += dt;
   G.carving = G.carveT > 0.25;
@@ -1304,6 +1394,7 @@ function simulate(dt) {
     if (G.trick) {
       G.trick.p += dt / TRICK_T;
       if (G.trick.p >= 1) {
+        G.stat[G.trick.type === "spin" ? "spins" : "flips"]++;
         award(
           "trick",
           (G.trick.type === "spin" ? POINTS.spin : POINTS.flip) * B.trick,
@@ -1361,8 +1452,12 @@ function simulate(dt) {
   for (const g of G.gates) {
     if (g.done || g.s > G.s) continue;
     g.done = true;
+    const ref = G.ref?.at[G.splits.length];
+    G.splits.push(G.t);
+    if (ref > 0) showSplit(G.t - ref);
     if (g.s >= s0 - 30 && Math.abs(G.d - g.d) < GATE_W + 0.6) {
       G.hits++;
+      G.stat.gateBest = Math.max(G.stat.gateBest, ++G.stat.gateRun);
       G.hp = Math.min(100, G.hp + 5);
       g.hit = true;
       g.mats.forEach((m) => m.color.set("#2fd27a"));
@@ -1372,6 +1467,7 @@ function simulate(dt) {
       buzz(8);
     } else {
       g.mats.forEach((m) => m.color.set("#8d99a6"));
+      G.stat.gateRun = 0;
       if (G.combo >= 2) popup("漏掉旗門，連段中斷");
       breakCombo();
       sfx.miss();
@@ -1386,7 +1482,10 @@ function simulate(dt) {
     G.dodged++;
     const { h, kind } = danger.pass;
     if (kind === "leap") award("dodge", POINTS.leap, `飛越${h.name}`);
-    else if (kind === "near") award("dodge", POINTS.near, "驚險閃過");
+    else if (kind === "near") {
+      G.stat.near++;
+      award("dodge", POINTS.near, "驚險閃過");
+    }
     if (kind !== "clear") {
       sfx.near();
       // 擦身而過的那一瞬間頓一下、晃一下
@@ -1399,6 +1498,7 @@ function simulate(dt) {
     const h = danger.hit;
     G.hp = Math.max(0, G.hp - h.dmg);
     G.inv = 1.6;
+    G.stat.crashes++;
     G.v *= 0.35;
     G.freeze = calm ? 0 : 0.09; // 撞擊瞬間定格
     jolt(0.9);
@@ -1772,6 +1872,12 @@ function finish(failed = false) {
   G.failed = failed;
   G.v = 0;
   G.ang = 0;
+  checkGoals(!failed);
+  renderGoals("rGoals");
+  $("rGoalSum").textContent = `累計完成 ${goalTotal()} 個目標`;
+  $("result").classList.remove("record");
+  $("confetti").innerHTML = "";
+  let record = false;
   $("rEyebrow").textContent = failed ? "體力耗盡" : "抵達終點";
   $("rName").innerHTML = `${diffTag(r.diff)}　${r.zh}`;
   $("rTime").textContent = failed ? "未完成" : fmtTime(G.t);
@@ -1788,6 +1894,12 @@ function finish(failed = false) {
       newScore = fin.total > old.score;
     if (newTime) store.set(`best:${key}:${r.id}`, G.t.toFixed(2));
     if (newScore) store.set(`score:${key}:${r.id}`, `${fin.total}|${gr}`);
+    if (!G.ref || G.t < G.ref.time)
+      store.set(
+        splitKey(r),
+        `${G.t.toFixed(2)}|${G.splits.map((t) => t.toFixed(2)).join(",")}`,
+      );
+    record = old.time > 0 && (newTime || newScore);
     note = !(old.time > 0)
       ? "第一次完成這條雪道"
       : newTime && newScore
@@ -1834,6 +1946,7 @@ function finish(failed = false) {
   G.res = {
     total: fin.total,
     grade: gr,
+    record,
     parts,
     time: failed ? 0 : G.t,
     t: 0,
@@ -1846,6 +1959,19 @@ function finish(failed = false) {
     sfx.fail();
     G.skier.fall();
   } else sfx.finish();
+}
+
+// 破紀錄：紀錄那一行亮起來，結算頁上方灑一陣彩帶
+const CONFETTI = ["#ffd23c", "#ff6b3d", "#2fd27a", "#1f6feb", "#ffffff"];
+function celebrate() {
+  $("result").classList.add("record");
+  sfx.record();
+  buzz(40);
+  if (calm) return;
+  let html = "";
+  for (let i = 0; i < 28; i++)
+    html += `<i style="left:${(Math.random() * 100).toFixed(1)}%;background:${CONFETTI[i % CONFETTI.length]};animation-delay:${(Math.random() * 0.5).toFixed(2)}s;--drift:${Math.round(Math.random() * 120 - 60)}px;--spin:${Math.round(Math.random() * 900 - 450)}deg"></i>`;
+  $("confetti").innerHTML = html;
 }
 
 // 結算：總分跳數字，跳完才蓋上評級
@@ -1876,6 +2002,7 @@ function stepResult(dt) {
     $("rGrade").classList.add("show");
     if (res.grade) sfx.grade(res.grade === "S");
     $("rSave").hidden = false;
+    if (res.record) celebrate();
   }
 }
 
@@ -2159,14 +2286,20 @@ $("cardClose").onclick = () => {
   frame(world.center, world.radius * 1.75);
 };
 $("btnFly").onclick = startFly;
-$("btnSki").onclick = startSki;
-$("btnAgain").onclick = startSki;
+$("btnSki").onclick = () => startSki();
+$("btnAgain").onclick = () => startSki(true);
+// 飛覽與結算跳分都能點一下跳過，急著再滑的人不用等
+document.addEventListener("pointerdown", (e) => {
+  if (e.target.closest("button, input, a")) return;
+  if (mode === "fly") backToExplore();
+  else if (mode === "result" && G.res && !G.res.done) G.res.t = 1e3;
+});
 $("btnOther").onclick = backToExplore;
 $("rSave").addEventListener("submit", saveScore);
 $("btnQuit").onclick = backToExplore;
 $("btnPause").onclick = () => setPaused(true);
 $("btnResume").onclick = () => setPaused(false);
-$("btnRestart").onclick = startSki;
+$("btnRestart").onclick = () => startSki(true);
 $("btnPauseQuit").onclick = backToExplore;
 $("btnMute").onclick = () => {
   setMuted(!isMuted());
@@ -2200,7 +2333,7 @@ const onKey = (down) => (e) => {
       if (mode !== "explore") return backToExplore();
     }
     if (k === "KeyP" && playing) return setPaused(!paused);
-    if (k === "KeyR" && (playing || mode === "result")) return startSki();
+    if (k === "KeyR" && (playing || mode === "result")) return startSki(true);
     if (k === "KeyM") {
       setMuted(!isMuted());
       return renderMute();

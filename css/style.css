@@ -2091,3 +2091,152 @@ h1 {
   opacity: 0.55;
   cursor: wait;
 }
+
+/* 每局目標：倒數時在畫面下方，暫停與結算各列一次 */
+.goals {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 3px;
+  font-size: 0.86rem;
+  text-align: left;
+}
+.goals li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.goals li::before {
+  content: "";
+  flex: none;
+  width: 0.95em;
+  height: 0.95em;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+  opacity: 0.45;
+}
+.goals li.done {
+  font-weight: 700;
+}
+.goals li.done::before {
+  border-color: var(--d0);
+  background: var(--d0);
+  opacity: 1;
+}
+.goals b {
+  margin-left: auto;
+  font: 700 0.95em var(--num);
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
+}
+#cdGoals {
+  position: absolute;
+  left: 50%;
+  bottom: max(26px, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  z-index: 5;
+  width: min(300px, calc(100% - 32px));
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: #0e1b2cb8;
+  color: #fff;
+  pointer-events: none;
+}
+#cdGoals[hidden] {
+  display: none;
+}
+#pGoals {
+  margin: 4px 0 16px;
+}
+#rGoalSum {
+  float: right;
+  letter-spacing: 0;
+}
+
+/* 分段時間：過旗門時在計時旁邊閃一下，比自己最快那次快是綠的、慢是紅的 */
+.hud-time {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+#hSplit {
+  font: 700 0.95rem/1 var(--num);
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  padding: 3px 7px;
+  border-radius: 999px;
+  color: #fff;
+  opacity: 0;
+}
+#hSplit.fast {
+  background: #1f9d55;
+}
+#hSplit.slow {
+  background: #d8402f;
+}
+#hSplit.show {
+  animation: split 2.4s both;
+}
+@keyframes split {
+  0% {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+  8%,
+  80% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@media (max-width: 760px), (max-height: 520px) {
+  #hSplit {
+    font-size: 0.78rem;
+    padding: 2px 6px;
+  }
+}
+
+/* 破紀錄：紀錄那一行變成亮底，結算頁上方落一陣彩帶 */
+#result.record .best {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: var(--flame);
+  color: #fff;
+  animation: record 0.5s cubic-bezier(0.2, 1.6, 0.4, 1) both;
+}
+@keyframes record {
+  from {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+}
+#confetti {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+#confetti i {
+  position: absolute;
+  top: -14px;
+  width: 8px;
+  height: 14px;
+  border-radius: 2px;
+  animation: confetti 2.2s cubic-bezier(0.3, 0.2, 0.6, 1) both;
+}
+@keyframes confetti {
+  to {
+    transform: translate(var(--drift), 105vh) rotate(var(--spin));
+    opacity: 0.2;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  #result.record .best,
+  #hSplit.show {
+    animation-duration: 0.01s;
+  }
+}

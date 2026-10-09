@@ -21,7 +21,7 @@
       rel="icon"
       href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%276%27 fill=%27%230e1b2c%27/%3E%3Cpath d=%27M4 24 13 9l5 8 3-4 7 11z%27 fill=%27%23fff%27/%3E%3C/svg%3E"
     />
-    <link rel="stylesheet" href="css/style.css?v=20261010c" />
+    <link rel="stylesheet" href="css/style.css?v=20261010d" />
     <script type="importmap">
       {
         "imports": {
@@ -154,7 +154,10 @@
           <button id="btnQuit" class="ghost">× 結束</button>
           <button id="btnPause" class="ghost" aria-label="暫停">Ⅱ 暫停</button>
           <div class="hud-name" id="hName"></div>
-          <div class="hud-time" id="hTime">0:00.0</div>
+          <div class="hud-time">
+            <em id="hSplit" aria-hidden="true"></em
+            ><span id="hTime">0:00.0</span>
+          </div>
         </div>
         <div class="hud-hp">
           <span>體力</span>
@@ -203,8 +206,10 @@
       </div>
 
       <div id="count" hidden></div>
+      <ul id="cdGoals" class="goals" hidden></ul>
 
       <div id="result" class="sheet" hidden>
+        <div id="confetti" aria-hidden="true"></div>
         <div class="sheet-in">
           <p class="eyebrow" id="rEyebrow">抵達終點</p>
           <h3 id="rName"></h3>
@@ -218,6 +223,8 @@
             <em>最高連段 <i id="rCombo">0</i></em>
           </div>
           <dl id="rStats"></dl>
+          <p class="board-title">本局目標<span id="rGoalSum"></span></p>
+          <ul id="rGoals" class="goals"></ul>
           <form id="rSave" class="save" hidden>
             <input
               id="rWho"
@@ -243,6 +250,7 @@
         <div class="sheet-in center">
           <p class="eyebrow">暫停中</p>
           <h3>喘口氣</h3>
+          <ul id="pGoals" class="goals"></ul>
           <div class="actions col">
             <button id="btnResume" class="solid">繼續滑</button>
             <button id="btnRestart" class="ghost dark">重新開始</button>
@@ -271,6 +279,6 @@
       </div>
     </div>
 
-    <script type="module" src="js/app.js?v=20261010c"></script>
+    <script type="module" src="js/app.js?v=20261010d"></script>
   </body>
 </html>

@@ -190,6 +190,15 @@ export const sfx = {
     tone(note(top ? 16 : 4), 0.5, { type: "sine", vol: 0.18 });
     hiss(0.12, { type: "lowpass", freq: 900, vol: 0.3 });
   },
+  record() {
+    [12, 16, 19, 24].forEach((s, i) =>
+      tone(note(s), i === 3 ? 0.6 : 0.14, {
+        type: "triangle",
+        vol: 0.24,
+        at: 0.25 + i * 0.09,
+      }),
+    );
+  },
   finish() {
     [0, 4, 7, 12, 16].forEach((s, i) =>
       tone(note(s), i === 4 ? 0.7 : 0.2, {
