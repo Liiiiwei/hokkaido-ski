@@ -3,10 +3,10 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/OrbitControls.js";
 // 改了任何一個 js 或 css 檔，就把這裡與 index.html 的 ?v= 一起換新。
 // 不換的話瀏覽器會拿新的 app.js 配快取裡舊的模組，整頁載不起來
-import { buildWorld, DIFF, STEP } from "./world.js?v=20261009e";
-import { createHazards } from "./hazards.js?v=20261009e";
-import { createSkier, BOARDS } from "./skier.js?v=20261009e";
-import { FACTS, COMPARE_ROWS } from "./facts.js?v=20261009e";
+import { buildWorld, DIFF, STEP } from "./world.js?v=20261009g";
+import { createHazards } from "./hazards.js?v=20261009g";
+import { createSkier, BOARDS } from "./skier.js?v=20261009g";
+import { FACTS, COMPARE_ROWS } from "./facts.js?v=20261009g";
 import {
   POINTS,
   comboMult,
@@ -14,7 +14,7 @@ import {
   finalScore,
   rating,
   grade,
-} from "./score.js?v=20261009e";
+} from "./score.js?v=20261009g";
 import {
   initAudio,
   updateAudio,
@@ -23,7 +23,7 @@ import {
   setMuted,
   isMuted,
   sfx,
-} from "./audio.js?v=20261009e";
+} from "./audio.js?v=20261009g";
 
 const $ = (id) => document.getElementById(id);
 const KEYS = ["teine", "kokusai"];
@@ -324,6 +324,7 @@ function select(i) {
     `個人最佳${b.grade ? `<b class="g${b.grade}">${b.grade}</b>` : ""}` +
     `${b.score > 0 ? `<span>${b.score.toLocaleString()} 分</span>` : ""}` +
     `${b.time > 0 ? `<span>${fmtTime(b.time)}</span>` : ""}`;
+  loadBoard(sel, "cBoard");
   const m = sel.at(sel.L / 2);
   controls.autoRotate = false;
   frame(
@@ -1783,9 +1784,8 @@ function readLocalBoard(run) {
     return [];
   }
 }
-function boardNote(text, retry) {
-  const ol = $("rBoard"),
-    li = document.createElement("li");
+function boardNote(ol, text, retry) {
+  const li = document.createElement("li");
   li.className = "empty";
   li.textContent = text;
   if (retry) {
@@ -1800,9 +1800,8 @@ function boardNote(text, retry) {
   ol.append(li);
 }
 // 列出前五名；自己剛記的那筆不在前五也補在最後一列
-function showBoard(list, mine) {
-  const ol = $("rBoard");
-  if (!list.length) return boardNote("還沒有人留下紀錄，當第一個");
+function showBoard(ol, list, mine) {
+  if (!list.length) return boardNote(ol, "還沒有人留下紀錄，當第一個");
   ol.textContent = "";
   const at = mine ? list.findIndex((e) => e.at === mine) : -1,
     show = list.slice(0, 5).map((e, i) => [i, e]);
@@ -1825,23 +1824,28 @@ function showBoard(list, mine) {
     ol.append(li);
   }
 }
-// 每次讀取或寫入都領一個號碼：回來時號碼不是最新的，代表畫面已經換成別趟，直接丟掉
-let boardTicket = 0;
-async function loadBoard(run) {
-  const ticket = ++boardTicket;
-  if (!BOARD_API) return showBoard(readLocalBoard(run));
-  boardNote("讀取排行榜…");
+// 每次讀取或寫入都領一個號碼：回來時號碼不是最新的，代表畫面已經換成別趟，直接丟掉。
+// 雪道卡片（cBoard）和結算畫面（rBoard）各領各的
+const boardTicket = { cBoard: 0, rBoard: 0 };
+// 讀過的榜先留著：再看同一條雪道時先顯示舊的，背景再更新
+const boardCache = new Map();
+async function loadBoard(run, id = "rBoard") {
+  const ol = $(id),
+    ticket = ++boardTicket[id],
+    name = `${key}:${run.id}`;
+  if (!BOARD_API) return showBoard(ol, readLocalBoard(run));
+  const had = boardCache.get(name);
+  if (had) showBoard(ol, had);
+  else boardNote(ol, "讀取排行榜…");
   try {
-    const res = await fetch(
-        `${BOARD_API}?run=${encodeURIComponent(`${key}:${run.id}`)}`,
-      ),
+    const res = await fetch(`${BOARD_API}?run=${encodeURIComponent(name)}`),
       d = await res.json();
-    if (ticket !== boardTicket) return;
     if (!d.ok) throw new Error(d.error);
-    showBoard(d.list);
+    boardCache.set(name, d.list);
+    if (ticket === boardTicket[id]) showBoard(ol, d.list);
   } catch {
-    if (ticket === boardTicket)
-      boardNote("排行榜暫時讀不到。", () => loadBoard(run));
+    if (ticket === boardTicket[id] && !had)
+      boardNote(ol, "排行榜暫時讀不到。", () => loadBoard(run, id));
   }
 }
 async function saveScore(e) {
@@ -1873,7 +1877,7 @@ async function saveScore(e) {
     res.saved = true;
     $("rSave").hidden = true;
     say(`已記錄，排第 ${rank} 名`);
-    showBoard(list, at);
+    showBoard($("rBoard"), list, at);
     sfx.ui();
   };
   if (!BOARD_API) {
@@ -1890,7 +1894,7 @@ async function saveScore(e) {
     }
     return done(list, entry.at, rank);
   }
-  const ticket = ++boardTicket;
+  const ticket = ++boardTicket.rBoard;
   res.saving = true;
   btn.disabled = $("rWho").disabled = true;
   btn.textContent = "記錄中…";
@@ -1910,7 +1914,9 @@ async function saveScore(e) {
       }),
       d = await r.json();
     if (!d.ok) throw new Error(d.error);
-    if (ticket === boardTicket && G.res === res) done(d.list, d.at, d.rank);
+    boardCache.set(`${key}:${run.id}`, d.list);
+    if (ticket === boardTicket.rBoard && G.res === res)
+      done(d.list, d.at, d.rank);
   } catch {
     if (G.res === res) say("沒有記錄成功，檢查網路後再按一次", true);
   } finally {

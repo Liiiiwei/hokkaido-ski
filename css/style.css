@@ -596,6 +596,9 @@ footer {
   z-index: 3;
   box-shadow: 0 20px 50px -10px #000a;
   animation: rise 0.4s both;
+  /* 加了排行榜之後卡片變高：矮螢幕上改成卡片內捲動，不要頂到上方的列 */
+  max-height: calc(100% - 96px);
+  overflow-y: auto;
 }
 .x {
   position: absolute;
@@ -966,6 +969,22 @@ footer {
   #card {
     bottom: 64px;
     padding: 16px 18px;
+    max-height: calc(100% - 152px);
+  }
+  /* 卡片內容捲動時，開始滑行的按鈕留在卡片底部 */
+  #card .actions {
+    position: sticky;
+    bottom: -16px;
+    margin: 12px -18px -16px;
+    padding: 8px 18px 16px;
+    background: var(--snow);
+  }
+  #card .board-title {
+    margin-top: 8px;
+  }
+  #card .board li {
+    padding: 2px 6px;
+    font-size: 0.8rem;
   }
   #card h3 {
     font-size: 1.35rem;
