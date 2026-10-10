@@ -619,6 +619,16 @@ export function buildWorld(data, { lowPower = false } = {}) {
     if (px < 0 || pz < 0 || px >= mc.width || pz >= mc.height) return true;
     return treeMask[(pz * mc.width + px) * 4] > 100;
   };
+  // 離雪道兩百多公尺以外的山坡滑的時候看不清楚，樹種疏一點就好
+  mx.lineCap = "round";
+  mx.lineWidth = 520 * mScale;
+  runs.forEach((r) => trace(mx, r.pts, mScale, x0, z0));
+  const nearMask = mx.getImageData(0, 0, mc.width, mc.height).data;
+  const farAway = (x, z) => {
+    const px = ((x - x0) * mScale) | 0,
+      pz = ((z - z0) * mScale) | 0;
+    return !(nearMask[(pz * mc.width + px) * 4] > 100);
+  };
 
   // 地形網格
   const pos = new Float32Array(gw * gh * 3),
@@ -836,7 +846,7 @@ export function buildWorld(data, { lowPower = false } = {}) {
     spots.push(x, z);
   };
   runs.forEach((r) => {
-    for (let i = 0; i < r.n; i += 2)
+    for (let i = 0; i < r.n; i += 3)
       for (const side of [-1, 1])
         for (let k = 0; k < 2; k++) {
           const p = r.at(i * STEP),
@@ -847,9 +857,13 @@ export function buildWorld(data, { lowPower = false } = {}) {
           );
         }
   });
-  const scatter = lowPower ? 9000 : 26000;
-  for (let i = 0; i < scatter; i++)
-    tryPlace(x0 + Math.random() * spanX, z0 + Math.random() * spanZ);
+  const scatter = lowPower ? 7000 : 20000;
+  for (let i = 0; i < scatter; i++) {
+    const x = x0 + Math.random() * spanX,
+      z = z0 + Math.random() * spanZ;
+    if (farAway(x, z) && Math.random() > 0.3) continue;
+    tryPlace(x, z);
+  }
   const total = spots.length / 2,
     isBirch = Array.from({ length: total }, () => Math.random() < 0.13),
     nBirch = isBirch.filter(Boolean).length,

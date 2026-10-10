@@ -3,10 +3,10 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/OrbitControls.js";
 // 改了任何一個 js 或 css 檔，就把這裡與 index.html 的 ?v= 一起換新。
 // 不換的話瀏覽器會拿新的 app.js 配快取裡舊的模組，整頁載不起來
-import { buildWorld, DIFF, STEP } from "./world.js?v=20261010l";
-import { createHazards } from "./hazards.js?v=20261010l";
-import { createSkier, BOARDS } from "./skier.js?v=20261010l";
-import { FACTS, COMPARE_ROWS } from "./facts.js?v=20261010l";
+import { buildWorld, DIFF, STEP } from "./world.js?v=20261010m";
+import { createHazards } from "./hazards.js?v=20261010m";
+import { createSkier, BOARDS } from "./skier.js?v=20261010m";
+import { FACTS, COMPARE_ROWS } from "./facts.js?v=20261010m";
 import {
   POINTS,
   comboMult,
@@ -14,7 +14,7 @@ import {
   finalScore,
   rating,
   grade,
-} from "./score.js?v=20261010l";
+} from "./score.js?v=20261010m";
 import {
   initAudio,
   updateAudio,
@@ -24,7 +24,7 @@ import {
   setVolume,
   isMuted,
   sfx,
-} from "./audio.js?v=20261010l";
+} from "./audio.js?v=20261010m";
 
 const $ = (id) => document.getElementById(id);
 const KEYS = ["teine", "kokusai"];
@@ -373,7 +373,8 @@ function select(i) {
   );
 }
 
-const GATE_W = 6.5; // 旗門半寬（公尺）
+const GATE_W = 6.5, // 旗門半寬（公尺）
+  GATE_H = 6.2; // 橫幅上緣的高度：跳起來做動作也碰不到
 // 跳台：長、寬、起跳點高度，以及坡面在 u（0 起點 → 1 起跳點）處的高度
 const KL = 7,
   KW = 7.5,
@@ -959,8 +960,8 @@ function startSki(quick = false) {
     const feet = [-GATE_W, GATE_W].map((o) =>
       ground(p.x - p.tz * (d + o), p.z + p.tx * (d + o)),
     );
-    for (const f of feet) grp.add(post(f, 4, 0.13, mats[0]));
-    grp.add(spanBanner(feet[0], feet[1], 4, 0.95, mats[1], 2));
+    for (const f of feet) grp.add(post(f, GATE_H, 0.15, mats[0]));
+    grp.add(spanBanner(feet[0], feet[1], GATE_H, 1.1, mats[1], 2));
     G.gates.push({ s, d, mats, done: false, hit: false });
   }
   G.goals = pickGoals(r, G.gates.length);
@@ -1157,6 +1158,31 @@ function startSki(quick = false) {
     grp.add(k);
     G.kickers.push({ s, d: 0, len: KL, w: KW, h: KH });
   }
+  // 纜車支柱與站房：落在滑得到的範圍內就是實心的，撞上去會受傷
+  G.solids = [];
+  const sq = {};
+  for (const l of world.lifts)
+    for (const nd of l.nodes) {
+      let best = 1e9,
+        bi = 0;
+      r.pts.forEach((p, i) => {
+        const dd = (p[0] - nd.x) ** 2 + (p[1] - nd.z) ** 2;
+        if (dd < best) ((best = dd), (bi = i));
+      });
+      const rad = nd.station ? 5.6 : 1.1;
+      if (Math.sqrt(best) > r.halfW + 12 + rad) continue;
+      const s0 = Math.min(r.L, bi * STEP);
+      r.at(s0, sq);
+      const ex = nd.x - sq.x,
+        ez = nd.z - sq.z;
+      G.solids.push({
+        s: s0 + ex * sq.tx + ez * sq.tz,
+        d: ez * sq.tx - ex * sq.tz,
+        r: rad,
+        name: nd.station ? "纜車站" : "纜車支柱",
+        dmg: 20,
+      });
+    }
   // 隨機關卡：雪球、狼、雪怪
   G.haz = createHazards(world, r, G.kickers, G.gates, grp, { puff });
   // 終點：格紋拱門加地上一道終點線
@@ -1643,8 +1669,17 @@ function simulate(dt) {
       buzz(15);
     }
   }
-  if (danger.hit && G.inv <= 0) {
-    const h = danger.hit;
+  // 支柱與站房是實心的：跳起來也過不去，撞到會被擠到旁邊
+  let solid = null;
+  for (const o of G.solids) {
+    const dd = G.d - o.d;
+    if (Math.abs(G.s - o.s) < o.r + 0.6 && Math.abs(dd) < o.r + 0.5) {
+      G.d = o.d + (dd < 0 ? -1 : 1) * (o.r + 0.55);
+      solid = o;
+    }
+  }
+  if ((danger.hit || solid) && G.inv <= 0) {
+    const h = danger.hit || solid;
     G.hp = Math.max(0, G.hp - h.dmg);
     G.inv = 1.6;
     G.stat.crashes++;
@@ -1662,7 +1697,7 @@ function simulate(dt) {
     $("hud").classList.add("hurt");
     if (G.hp <= 0) {
       G.skier.group.visible = true;
-      h.mesh.visible = h.sign.visible = false; // 結算鏡頭會繞到正面，別讓牠擋住人物
+      if (h.mesh) h.mesh.visible = h.sign.visible = false; // 結算鏡頭會繞到正面，別讓牠擋住人物
       showWarn(null);
       return finish(true);
     }
