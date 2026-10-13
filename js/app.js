@@ -3,10 +3,10 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/OrbitControls.js";
 // 改了任何一個 js 或 css 檔，就把這裡與 index.html 的 ?v= 一起換新。
 // 不換的話瀏覽器會拿新的 app.js 配快取裡舊的模組，整頁載不起來
-import { buildWorld, DIFF, STEP } from "./world.js?v=20261010m";
-import { createHazards } from "./hazards.js?v=20261010m";
-import { createSkier, BOARDS } from "./skier.js?v=20261010m";
-import { FACTS, COMPARE_ROWS } from "./facts.js?v=20261010m";
+import { buildWorld, DIFF, STEP } from "./world.js?v=20261014a";
+import { createHazards } from "./hazards.js?v=20261014a";
+import { createSkier, BOARDS } from "./skier.js?v=20261014a";
+import { FACTS, COMPARE_ROWS } from "./facts.js?v=20261014a";
 import {
   POINTS,
   comboMult,
@@ -14,7 +14,7 @@ import {
   finalScore,
   rating,
   grade,
-} from "./score.js?v=20261010m";
+} from "./score.js?v=20261014a";
 import {
   initAudio,
   updateAudio,
@@ -24,7 +24,7 @@ import {
   setVolume,
   isMuted,
   sfx,
-} from "./audio.js?v=20261010m";
+} from "./audio.js?v=20261014a";
 
 const $ = (id) => document.getElementById(id);
 const KEYS = ["teine", "kokusai"];
@@ -2587,6 +2587,28 @@ for (const [id, k] of [
   });
   for (const ev of ["pointerup", "pointercancel", "pointerleave"])
     el.addEventListener(ev, up);
+}
+// iOS 就算設了 touch-action: none，連點兩下還是會放大畫面：
+// 操控鈕不靠 click，直接在 touchstart 擋掉預設行為（指標事件照常送出）
+for (const b of document.querySelectorAll(".touch button"))
+  b.addEventListener("touchstart", (e) => e.preventDefault(), {
+    passive: false,
+  });
+// 遊戲畫面其他地方：第二下落在 350ms 內就擋掉，按鈕的點擊自己補送；雙指縮放不受影響
+{
+  let last = 0;
+  $("app").addEventListener(
+    "touchend",
+    (e) => {
+      const quick = e.timeStamp - last < 350;
+      last = e.timeStamp;
+      if (!quick || e.touches.length || !e.cancelable) return;
+      if (e.target.closest("input, select, textarea, a, #panel")) return;
+      e.preventDefault();
+      e.target.closest("button")?.click();
+    },
+    { passive: false },
+  );
 }
 $("gear").addEventListener("click", (e) => {
   const b = e.target.closest("button");
