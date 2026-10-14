@@ -3,10 +3,10 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/OrbitControls.js";
 // 改了任何一個 js 或 css 檔，就把這裡與 index.html 的 ?v= 一起換新。
 // 不換的話瀏覽器會拿新的 app.js 配快取裡舊的模組，整頁載不起來
-import { buildWorld, DIFF, STEP } from "./world.js?v=20261014a";
-import { createHazards } from "./hazards.js?v=20261014a";
-import { createSkier, BOARDS } from "./skier.js?v=20261014a";
-import { FACTS, COMPARE_ROWS } from "./facts.js?v=20261014a";
+import { buildWorld, DIFF, STEP } from "./world.js?v=20261015a";
+import { createHazards } from "./hazards.js?v=20261015a";
+import { createSkier, BOARDS } from "./skier.js?v=20261015a";
+import { FACTS, COMPARE_ROWS } from "./facts.js?v=20261015a";
 import {
   POINTS,
   comboMult,
@@ -14,7 +14,7 @@ import {
   finalScore,
   rating,
   grade,
-} from "./score.js?v=20261014a";
+} from "./score.js?v=20261015a";
 import {
   initAudio,
   updateAudio,
@@ -24,7 +24,7 @@ import {
   setVolume,
   isMuted,
   sfx,
-} from "./audio.js?v=20261014a";
+} from "./audio.js?v=20261015a";
 
 const $ = (id) => document.getElementById(id);
 const KEYS = ["teine", "kokusai"];
@@ -62,13 +62,13 @@ $("tickets").innerHTML = KEYS.map((k, i) => {
   const f = FACTS[k];
   return `<article class="ticket" style="--i:${i}">
     <div class="t-main">
-      <p class="t-ja">${f.ja}</p>
       <h2>${f.name}</h2>
+      <p class="t-ja">${f.ja}</p>
       <p class="t-tag">${f.tagline}</p>
       <ul>${f.stats.map((s) => `<li><span>${s[0]}</span><b>${s[1]}</b></li>`).join("")}</ul>
     </div>
     <div class="t-stub">
-      <span>山頂</span><b>${f.peak}</b><span>公尺</span>
+      <b><span>${f.peak}<small>m</small></span><small class="t-alt">山頂海拔</small></b>
       <button class="solid" data-enter="${k}">進入雪場</button>
     </div>
   </article>`;
@@ -80,10 +80,29 @@ $("compare").innerHTML =
       `<tr><th>${r}</th>${KEYS.map((k) => `<td>${FACTS[k].compare[i]}</td>`).join("")}</tr>`,
   ).join("")}</tbody>`;
 
+// 雪場實景照（Wikimedia Commons，CC BY 2.0），第一張放大
+const PHOTOS = {
+  teine: [
+    ["teine-base", 1400, 933, "手稻山麓的雪場中心與雪道"],
+    ["teine-riders", 1400, 787, "手稻雪道上休息的單板客，對面是滿山的樺樹林"],
+  ],
+  kokusai: [
+    ["kokusai-summit", 1400, 786, "札幌國際的纜車站，天氣好時看得到遠方的海"],
+    ["kokusai-skis", 1400, 788, "札幌國際的雪道"],
+    ["jozankei-night", 1400, 787, "定山溪溫泉的冬夜，滑完下山順路就到"],
+  ],
+};
 $("resorts").innerHTML = KEYS.map((k, i) => {
   const f = FACTS[k];
   return `<section class="band resort ${i % 2 ? "alt" : ""}">
-    <h2><span>0${i + 2}</span>${f.name}<small>${f.ja}</small></h2>
+    <h2>${f.name}</h2>
+    <p class="r-ja">${f.ja}</p>
+    <div class="r-photos">${PHOTOS[k]
+      .map(
+        ([src, w, h, cap], j) =>
+          `<figure${j ? "" : ` style="grid-row: span ${PHOTOS[k].length - 1}"`}><img src="img/${src}.jpg" width="${w}" height="${h}" alt="${cap}" loading="lazy" decoding="async" /><figcaption>${cap}</figcaption></figure>`,
+      )
+      .join("")}</div>
     <div class="cols">
       <div>
         <ul class="points">${f.highlights.map((h) => `<li>${h}</li>`).join("")}</ul>
@@ -96,14 +115,14 @@ $("resorts").innerHTML = KEYS.map((k, i) => {
       </div>
       <div class="table-wrap">
         <table class="courses">
-          <thead><tr><th>雪道</th><th>難度</th><th>長度</th><th>平均</th><th>最大</th></tr></thead>
+          <thead><tr><th>雪道</th><th>難度</th><th>長度</th><th>坡度<small>平均／最大</small></th></tr></thead>
           <tbody>${f.courses
             .map(
               (
                 c,
                 j,
-              ) => `${c[0] && (!j || f.courses[j - 1][0] !== c[0]) ? `<tr class="zone"><td colspan="5">${c[0]}</td></tr>` : ""}
-            <tr><td>${c[1]}<small>${c[2]}</small></td><td>${diffTag(c[3])}</td><td>${c[4].toLocaleString()} m</td><td>${c[5]}°</td><td>${c[6]}°</td></tr>`,
+              ) => `${c[0] && (!j || f.courses[j - 1][0] !== c[0]) ? `<tr class="zone"><td colspan="4">${c[0]}</td></tr>` : ""}
+            <tr><td>${c[1]}<small>${c[2]}</small></td><td>${diffTag(c[3])}</td><td>${c[4].toLocaleString()} m</td><td>${c[5]}°／${c[6]}°</td></tr>`,
             )
             .join("")}</tbody>
         </table>
@@ -111,6 +130,32 @@ $("resorts").innerHTML = KEYS.map((k, i) => {
     </div>
   </section>`;
 }).join("");
+
+// 往下捲時各段落的標題、照片、表格依序浮上來；沒有腳本時內容照常顯示
+{
+  const io = new IntersectionObserver(
+    (es) => {
+      for (const e of es)
+        if (e.isIntersecting) {
+          e.target.classList.add("in");
+          io.unobserve(e.target);
+        }
+    },
+    { rootMargin: "0px 0px -8% 0px" },
+  );
+  for (const sec of document.querySelectorAll("#landing .band"))
+    [
+      ...new Set(
+        sec.querySelectorAll(
+          ":scope > h2, :scope > .r-ja, .r-photos figure, .cols > *, :scope > .table-wrap, .steps li",
+        ),
+      ),
+    ].forEach((el, i) => {
+      el.classList.add("rv");
+      el.style.setProperty("--rv", `${Math.min(i, 6) * 80}ms`);
+      io.observe(el);
+    });
+}
 
 const flakes = document.querySelector(".flakes");
 // 近的雪花大、快、略糊；遠的小、慢、淡

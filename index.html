@@ -21,7 +21,7 @@
       rel="icon"
       href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%276%27 fill=%27%230e1b2c%27/%3E%3Cpath d=%27M4 24 13 9l5 8 3-4 7 11z%27 fill=%27%23fff%27/%3E%3C/svg%3E"
     />
-    <link rel="stylesheet" href="css/style.css?v=20261014a" />
+    <link rel="stylesheet" href="css/style.css?v=20261015a" />
     <script type="importmap">
       {
         "imports": {
@@ -34,14 +34,21 @@
   <body>
     <main id="landing">
       <section class="hero">
+        <img
+          class="hero-photo"
+          src="img/teine-city-view.jpg"
+          width="1920"
+          height="1079"
+          alt="札幌手稻的雪道，山坡下是札幌市區"
+          fetchpriority="high"
+        />
         <div class="flakes" aria-hidden="true"></div>
-        <div class="hero-kanji" aria-hidden="true">雪</div>
         <div class="hero-inner">
           <div class="hero-copy">
-            <p class="eyebrow">北海道札幌｜2026–27 雪季</p>
             <h1>出發前，<br />先滑一遍。</h1>
             <p class="lede">
-              札幌手稻與札幌國際，兩座雪場的真實地形與雪道都搬進來了。先看每條雪道怎麼走、有多陡，再自己滑下去試試。
+              北海道札幌，2026–27
+              雪季。札幌手稻與札幌國際兩座雪場的真實地形與雪道都搬進來了，先看每條雪道怎麼走、有多陡，再自己滑下去試試。
             </p>
           </div>
           <div class="tickets" id="tickets"></div>
@@ -53,10 +60,6 @@
           aria-hidden="true"
         >
           <path
-            d="M0 150 L140 96 L250 132 L420 40 L560 118 L690 70 L860 138 L1010 58 L1160 122 L1300 84 L1440 136 V220 H0Z"
-            fill="#17304a"
-          />
-          <path
             d="M0 186 L180 140 L330 172 L520 110 L700 168 L880 124 L1080 176 L1260 132 L1440 170 V220 H0Z"
             fill="#f3f6f9"
           />
@@ -64,7 +67,7 @@
       </section>
 
       <section class="band">
-        <h2><span>01</span>兩座雪場比一比</h2>
+        <h2>兩座雪場比一比</h2>
         <div class="table-wrap">
           <table class="compare" id="compare"></table>
         </div>
@@ -73,7 +76,7 @@
       <div id="resorts"></div>
 
       <section class="band howto">
-        <h2><span>04</span>怎麼玩</h2>
+        <h2>怎麼玩</h2>
         <ol class="steps">
           <li><b>挑雪場</b>進入 3D 地形，拖曳旋轉、滾輪或雙指縮放。</li>
           <li>
@@ -104,6 +107,44 @@
         <p>
           雪場數據取自兩座雪場官方網站，查證日 2026 年 10 月 5
           日；營業時間、票價與交通請以官方最新公告為準。
+        </p>
+        <p>
+          照片：MIKI Yoshihito，<a
+            href="https://creativecommons.org/licenses/by/2.0/"
+            target="_blank"
+            rel="noopener"
+            >CC BY 2.0</a
+          >，取自 Wikimedia Commons：<a
+            href="https://commons.wikimedia.org/w/index.php?curid=90661280"
+            target="_blank"
+            rel="noopener"
+            >手稻雪道</a
+          >、<a
+            href="https://commons.wikimedia.org/w/index.php?curid=90661276"
+            target="_blank"
+            rel="noopener"
+            >手稻山麓</a
+          >、<a
+            href="https://commons.wikimedia.org/w/index.php?curid=90661279"
+            target="_blank"
+            rel="noopener"
+            >手稻單板客</a
+          >、<a
+            href="https://commons.wikimedia.org/w/index.php?curid=68662326"
+            target="_blank"
+            rel="noopener"
+            >札幌國際纜車站</a
+          >、<a
+            href="https://commons.wikimedia.org/w/index.php?curid=110161513"
+            target="_blank"
+            rel="noopener"
+            >札幌國際雪道</a
+          >、<a
+            href="https://commons.wikimedia.org/w/index.php?curid=107816095"
+            target="_blank"
+            rel="noopener"
+            >定山溪溫泉</a
+          >。
         </p>
       </footer>
     </main>
@@ -289,6 +330,6 @@
       </div>
     </div>
 
-    <script type="module" src="js/app.js?v=20261014a"></script>
+    <script type="module" src="js/app.js?v=20261015a"></script>
   </body>
 </html>
