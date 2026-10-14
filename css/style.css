@@ -11,13 +11,13 @@
   --d0: #2fa35a;
   --d1: #e23b2e;
   --d2: #15181c;
-  /* 字距只有兩種：小標籤用 label，眉標用 wide */
-  --ls-label: 0.1em;
-  --ls-wide: 0.2em;
-  /* 字級階：全站字級只從這一組取 */
-  --fs-2xs: 0.62rem;
-  --fs-xs: 0.72rem;
-  --fs-sm: 0.8rem;
+  /* 字距只有兩種：小標籤用 label，眉標用 wide；都收窄，中文拉太開反而難讀 */
+  --ls-label: 0.04em;
+  --ls-wide: 0.08em;
+  /* 字級階：全站字級只從這一組取；最小 13px，壓在雪地上的小字才讀得到 */
+  --fs-2xs: 0.8125rem;
+  --fs-xs: 0.8125rem;
+  --fs-sm: 0.875rem;
   --fs-md: 0.9rem;
   --fs-base: 1rem;
   --fs-lg: 1.1rem;
@@ -141,7 +141,6 @@ button {
   height: 100%;
   object-fit: cover;
   object-position: 60% 50%;
-  animation: drift 40s ease-in-out infinite alternate;
 }
 /* 照片上壓一層平塗深藍，白字才讀得清楚 */
 .hero::after {
@@ -150,14 +149,7 @@ button {
   inset: 0;
   background: #0e1b2ca8;
 }
-@keyframes drift {
-  from {
-    transform: scale(1.04);
-  }
-  to {
-    transform: scale(1.12) translateX(-1.5%);
-  }
-}
+
 .hero-inner {
   position: relative;
   z-index: 2;
@@ -624,6 +616,24 @@ footer a {
   border-radius: 2px;
   font-weight: 700;
   color: #c5d3e0;
+  white-space: nowrap;
+}
+/* 手機上頂部列的字不斷行：按鈕內距收小 */
+.bar .ghost {
+  white-space: nowrap;
+}
+@media (max-width: 760px) {
+  .bar {
+    gap: 8px;
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+  .bar .ghost {
+    padding: 0.55em 0.75em;
+  }
+  .tabs button {
+    padding: 0.45em 0.75em;
+  }
 }
 .tabs .on {
   background: var(--snow);
@@ -777,7 +787,10 @@ footer a {
   inset: 0;
   pointer-events: none;
   z-index: 4;
-  text-shadow: 0 1px 8px #0e1b2caa;
+  /* 一層貼字的深色描邊加一層柔光，壓在白雪上也讀得到 */
+  text-shadow:
+    0 1px 2px #0e1b2ccc,
+    0 0 12px #0e1b2c99;
 }
 #hud button {
   pointer-events: auto;
@@ -826,12 +839,15 @@ footer a {
   bottom: 92px;
   text-align: right;
   font: 500 var(--fs-base)/1.5 var(--num);
+  /* 和頂部連段條同一種半透明深底 */
+  background: #0e1b2c99;
+  border-radius: 6px;
+  padding: 8px 14px;
 }
 .hud-side span {
   font: 500 var(--fs-xs) var(--sans);
   letter-spacing: var(--ls-label);
   margin-right: 0.6em;
-  opacity: 0.85;
 }
 .hud-side b {
   font-size: var(--fs-2xl);
@@ -1433,6 +1449,9 @@ h1 {
     gap: 12px;
     font-size: var(--fs-2xs);
     line-height: 1.15;
+    /* 手機上這欄縮在左上角，不需要底板 */
+    background: none;
+    padding: 0;
   }
   .hud-side > div:first-child {
     display: none;
